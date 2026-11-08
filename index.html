@@ -2,521 +2,621 @@
 <html lang="de">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Lagebild Lite</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#070C16;--bg2:#0B1322;--surface:rgba(24,36,54,.72);--surface2:rgba(33,48,70,.8);--line:rgba(120,150,190,.22);
+  --bg:#070C16;--surface:rgba(24,36,54,.78);--surface2:rgba(33,48,70,.85);--line:rgba(120,150,190,.22);
   --text:#F3EFE7;--muted:#93A3B8;--amber:#FFB020;--teal:#35E0C8;--red:#FF5A5F;--blue:#5B98FF;
-  --fd:"Barlow Semi Condensed","Barlow",system-ui,sans-serif;--fb:"Barlow",-apple-system,system-ui,sans-serif;
-  box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:dark;
+  --fd:"Barlow Semi Condensed","Barlow","SF Pro Display",system-ui,sans-serif;--fb:"Barlow",-apple-system,system-ui,sans-serif;
+  color-scheme:dark;
 }
-@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){--bg:#070C16;--bg2:#0B1322;color-scheme:dark}}
-:root[data-theme="dark"]{--bg:#070C16;--bg2:#0B1322}
-html{height:100%;scroll-padding-top:env(safe-area-inset-top,0px)}
+html{height:100%}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-body{margin:0;height:100%;color:var(--text);font-family:var(--fb);font-size:17px;line-height:1.35;display:flex;flex-direction:column;-webkit-text-size-adjust:100%;
-  background:radial-gradient(120% 70% at 50% 0%,#132240 0%,#0A1120 45%,#070C16 100%)}
-body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);background:#0A1120;z-index:10}
+body{margin:0;min-height:100%;color:var(--text);font-family:var(--fb);font-size:17px;line-height:1.35;-webkit-text-size-adjust:100%;
+  background:radial-gradient(120% 70% at 50% 0%,#132240 0%,#0A1120 45%,#070C16 100%) fixed;background-color:#070C16;
+  padding-top:env(safe-area-inset-top,0px)}
 body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
-  background-image:linear-gradient(rgba(120,150,190,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(120,150,190,.07) 1px,transparent 1px);background-size:28px 28px;
+  background-image:linear-gradient(rgba(120,150,190,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(120,150,190,.06) 1px,transparent 1px);background-size:28px 28px;
   -webkit-mask-image:radial-gradient(80% 60% at 50% 30%,#000 30%,transparent 100%);mask-image:radial-gradient(80% 60% at 50% 30%,#000 30%,transparent 100%)}
-#bg3d{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none}
-body::after{z-index:0}
-.top,main,nav,#boot{position:relative;z-index:1}
-.top h1{background:linear-gradient(180deg,#FFF6E0,#FFB020 120%);-webkit-background-clip:text;background-clip:text;color:transparent}
-.scope::before{content:"";position:absolute;inset:-6%;border-radius:50%;background:radial-gradient(circle,rgba(255,176,32,.16),rgba(255,176,32,0) 60%);filter:blur(10px);pointer-events:none;z-index:-1}
+.top,main,nav{position:relative;z-index:1}
 .top{display:flex;align-items:flex-end;justify-content:space-between;padding:14px 20px 0}
-.top h1{font-family:var(--fd);font-weight:700;font-size:26px;letter-spacing:.3px;margin:0;line-height:1}
+.top h1{font-family:var(--fd);font-weight:700;font-size:26px;letter-spacing:.3px;margin:0;line-height:1;color:#FFE2A6}
 .top h1 small{display:block;font-family:var(--fb);font-weight:500;font-size:13px;color:var(--muted);letter-spacing:0;margin-top:3px}
 .top .clock{font-family:var(--fd);font-weight:600;font-size:22px;font-variant-numeric:tabular-nums;color:var(--muted)}
-main{flex:1;overflow:auto;padding:0 16px 112px}
-section{display:none}section.on{display:block;animation:fadein .35s ease-out}
+main{padding:0 16px calc(112px + env(safe-area-inset-bottom,0px))}
+section{display:none}section.on{display:block;animation:fadein .3s ease-out}
 @keyframes fadein{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-.scope{position:relative;width:min(94vw,380px);height:min(94vw,380px);margin:0 auto -10px}
+.scope{position:relative;width:min(84vw,330px);height:min(84vw,330px);margin:4px auto 0}
 .scope canvas{width:100%;height:100%;display:block}
-.scope .mid{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;padding-top:6%}
-.scope .val{font-family:var(--fd);font-weight:700;font-size:76px;line-height:.95;letter-spacing:-1.5px;text-shadow:0 0 24px rgba(255,176,32,.35),0 0 2px rgba(255,255,255,.5)}
-.scope .val.sm{font-size:44px}
-.scope .lab{font-size:14px;color:var(--muted);margin-top:6px}
-.state{text-align:center;font-family:var(--fd);font-weight:600;font-size:22px;min-height:28px;letter-spacing:.2px;margin-top:-6px}
-.state.live{color:var(--amber);text-shadow:0 0 16px rgba(255,176,32,.45)}.state.good{color:var(--teal);text-shadow:0 0 16px rgba(53,224,200,.4)}.state.bad{color:var(--red);text-shadow:0 0 18px rgba(255,90,95,.55)}
-.lead{text-align:center;color:var(--muted);font-size:14px;margin:6px 24px 14px}
-.go{display:block;width:100%;min-height:62px;border:0;border-radius:18px;background:linear-gradient(180deg,#FFC14D,#F49E00);color:#1A1200;font-family:var(--fd);font-weight:700;font-size:22px;letter-spacing:.2px;box-shadow:0 10px 30px rgba(255,176,32,.28),inset 0 1px 0 rgba(255,255,255,.35)}
-.go.stop{background:var(--surface2);color:var(--text);border:1px solid var(--line);box-shadow:none;-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
-.go:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
+.scope .mid{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none}
+.scope .val{font-family:var(--fd);font-weight:700;font-size:68px;line-height:.95;letter-spacing:-1px;text-shadow:0 0 24px rgba(255,176,32,.3)}
+.scope .val.sm{font-size:42px}
+.scope .lab{font-size:13px;color:var(--muted);margin-top:6px;text-align:center;max-width:70%}
+.state{text-align:center;font-family:var(--fd);font-weight:600;font-size:22px;min-height:28px;letter-spacing:.2px}
+.state.live{color:var(--amber)}.state.good{color:var(--teal)}.state.bad{color:var(--red)}
+.detail{text-align:center;color:var(--text);opacity:.85;font-size:14px;min-height:1.3em;margin:2px 12px 0}
+.lead{text-align:center;color:var(--muted);font-size:14px;margin:8px 12px 14px}
+.go{display:block;width:100%;min-height:62px;border:0;border-radius:18px;background:linear-gradient(180deg,#FFC14D,#F49E00);color:#1A1200;font-family:var(--fd);font-weight:700;font-size:22px;letter-spacing:.2px;box-shadow:0 10px 30px rgba(255,176,32,.25),inset 0 1px 0 rgba(255,255,255,.35)}
+.go.stop{background:var(--surface2);color:var(--text);border:1px solid var(--line);box-shadow:none}
+.go:focus-visible,.sec:focus-visible,nav button:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
 .read{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
-.read div,.strip,.ticker{background:var(--surface);border:1px solid var(--line);border-radius:16px;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
-.read div{padding:12px 14px;min-height:76px}
+.read>div,.strip,.ticker,.diag{background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+.read>div{padding:12px 14px;min-height:76px}
 .read b{display:block;font-family:var(--fd);font-weight:600;font-size:28px;line-height:1.05;font-variant-numeric:tabular-nums}
 .read span{font-size:13px;color:var(--muted)}
+.read em{display:block;font-style:normal;font-size:12px;color:var(--amber);margin-top:2px}
 .bar{height:6px;border-radius:3px;background:rgba(120,150,190,.18);margin-top:8px;overflow:hidden}
-.bar i{display:block;height:100%;width:0;background:var(--teal);box-shadow:0 0 10px var(--teal);transition:width .15s}
-.bar.warn i{background:var(--amber);box-shadow:0 0 10px var(--amber)}.bar.bad i{background:var(--red);box-shadow:0 0 10px var(--red)}
-.strip{margin-top:14px;padding:10px 12px 6px}
-.strip canvas{width:100%;height:120px;display:block;border-radius:8px}
+.bar i{display:block;height:100%;width:0;background:var(--teal);transition:width .15s}
+.bar.warn i{background:var(--amber)}.bar.bad i{background:var(--red)}
+.strip{margin-top:14px;padding:10px 12px 8px}
+.strip canvas{width:100%;height:120px;display:block;border-radius:8px;touch-action:manipulation}
 .strip p{margin:6px 2px 0;font-size:13px;color:var(--muted)}
-.err{color:var(--red);font-size:14px;margin:8px 4px 0;min-height:1em}
 video{width:100%;max-height:200px;object-fit:cover;border-radius:16px;background:#000;margin-top:10px;display:block;border:1px solid var(--line)}
 .ticker{margin-top:14px;padding:12px}
 .ticker h3{font-family:var(--fd);font-weight:600;font-size:18px;margin:0 0 8px 2px}
-ul.log{list-style:none;margin:0;padding:0}
+ul.log{list-style:none;margin:8px 0 0;padding:0}
 ul.log li{display:grid;grid-template-columns:64px 1fr auto;gap:10px;padding:10px 2px;border-bottom:1px solid var(--line);font-size:15px;align-items:baseline}
 ul.log li time{font-family:var(--fd);font-weight:600;color:var(--amber);font-variant-numeric:tabular-nums}
-ul.log li em{font-style:normal;color:var(--muted);font-size:13px}
-ul.log li .src{font-size:12px;color:var(--muted)}
-.row{display:flex;gap:10px}
-.sec{flex:1;min-height:50px;border-radius:14px;border:1px solid var(--line);background:rgba(33,48,70,.6);color:var(--text);font-family:var(--fd);font-weight:600;font-size:17px}
+ul.log li em{font-style:normal;color:var(--muted);font-size:12px;text-align:right}
+ul.log li small{display:block;font-size:12px;color:var(--muted)}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+.sec{flex:1;min-width:30%;min-height:50px;border-radius:14px;border:1px solid var(--line);background:rgba(33,48,70,.7);color:var(--text);font-family:var(--fd);font-weight:600;font-size:17px}
+.sec.on{border-color:var(--red);color:var(--red)}
 .hint{font-size:13px;color:var(--muted);margin:10px 4px 0}
-nav{position:fixed;left:0;right:0;bottom:0;padding:8px 10px calc(10px + env(safe-area-inset-bottom,0px));background:rgba(11,19,34,.78);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(5,1fr);gap:4px;z-index:5}
+.diag{margin-top:14px;padding:10px 12px}
+.diag summary{font-family:var(--fd);font-weight:600;font-size:16px;cursor:pointer;min-height:32px;display:flex;align-items:center}
+.diag dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:8px 0 2px;font-size:13px}
+.diag dt{color:var(--muted)}.diag dd{margin:0;word-break:break-word;font-variant-numeric:tabular-nums}
+nav{position:fixed;left:0;right:0;bottom:0;padding:8px 10px calc(10px + env(safe-area-inset-bottom,0px));background:rgba(11,19,34,.92);border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(5,1fr);gap:4px;z-index:5}
 nav button{background:transparent;border:0;color:var(--muted);border-radius:12px;min-height:54px;font-family:var(--fd);font-weight:600;font-size:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}
 nav button svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-nav button.on{color:var(--amber);background:rgba(255,176,32,.12);text-shadow:0 0 12px rgba(255,176,32,.5)}
-nav button:focus-visible{outline:2px solid var(--blue)}
-#boot{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#070C16;animation:bootout .6s ease-in 1.6s forwards;pointer-events:none}
-#boot .ring{position:absolute;width:40vmin;height:40vmin;border-radius:50%;border:2px solid var(--amber);opacity:0;animation:ring 1.6s ease-out forwards}
-#boot .ring:nth-child(2){animation-delay:.25s}#boot .ring:nth-child(3){animation-delay:.5s}
-#boot h2{font-family:var(--fd);font-weight:700;font-size:34px;margin:0;letter-spacing:1px;animation:fadein .8s ease-out .2s both}
-#boot p{color:var(--muted);margin:6px 0 0;animation:fadein .8s ease-out .6s both}
-@keyframes ring{0%{transform:scale(.2);opacity:.9}100%{transform:scale(2.4);opacity:0}}
-@keyframes bootout{to{opacity:0;visibility:hidden}}
-@media (prefers-reduced-motion: reduce){.bar i{transition:none}#boot{animation-duration:.01s;animation-delay:.3s}#boot .ring{display:none}section.on{animation:none}}
+nav button.on{color:var(--amber);background:rgba(255,176,32,.12)}
+nav button .dot{width:6px;height:6px;border-radius:3px;background:var(--red);visibility:hidden}
+nav button.run .dot{visibility:visible}
+@media (prefers-reduced-motion: reduce){.bar i{transition:none}section.on{animation:none}}
 </style>
 </head>
 <body>
-<canvas id="bg3d"></canvas>
-<div id="boot"><div class="ring"></div><div class="ring"></div><div class="ring"></div><h2>Lagebild Lite</h2><p>Sensoren bereit</p></div>
-<div class="top"><h1>Lagebild Lite<small id="sub">Kontaktsensor</small></h1><div class="clock" id="clock">–:–:–</div></div>
+<div class="top"><h1>Lagebild Lite<small id="sub">Kontaktsensor</small></h1><div class="clock" id="clock" aria-hidden="true">–:–:–</div></div>
 <main>
-<div class="scope" id="scope"><canvas id="scope3d"></canvas><div class="mid"><div class="val" id="val">–</div><div class="lab" id="lab"></div></div></div>
+<div class="scope" id="scope" aria-hidden="true"><canvas id="scope2d" width="660" height="660"></canvas><div class="mid"><div class="val" id="val">–</div><div class="lab" id="lab"></div></div></div>
 
 <section id="kontakt" class="on">
-  <div class="state" id="kState">Bereit</div>
-  <p class="lead">iPhone flach an Wand, Tür oder Boden. Misst Vibration und Körperschall, zeichnet keine Sprache auf.</p>
+  <div class="state" id="kState" role="status" aria-live="polite">Bereit</div>
+  <div class="detail" id="kDetail"></div>
+  <p class="lead">iPhone flach an Wand, Tür oder Boden legen. Gemessen werden Vibration (Bewegungssensor) und Pegel am Mikrofon. Luft- und Körperschall werden dabei nicht getrennt; Ursachen werden nicht benannt. Es wird nichts aufgezeichnet.</p>
   <button class="go" id="kGo">Messung starten</button>
-  <div class="err" id="kErr"></div>
   <div class="read">
-    <div><b id="kVoice">–</b><span>Stimme, dB über Ruhe</span><div class="bar" id="kVoiceB"><i></i></div></div>
-    <div><b id="kLow">–</b><span>Tür / Maschine, dB über Ruhe</span><div class="bar" id="kLowB"><i></i></div></div>
+    <div><b id="kVib">–</b><span>Vibration, × Ruhe</span><div class="bar" id="kVibB"><i></i></div></div>
+    <div><b id="kMot">–</b><span>Telefonlage</span></div>
+    <div><b id="kVoice">–</b><span>Pegel 100–4000 Hz, dB über Ruhe</span><div class="bar" id="kVoiceB"><i></i></div></div>
+    <div><b id="kLow">–</b><span>Pegel 20–80 Hz, dB über Ruhe</span><div class="bar" id="kLowB"><i></i></div></div>
   </div>
-  <div class="strip"><canvas id="kStrip" width="700" height="220"></canvas><p>Vibration der letzten 30 Sekunden</p></div>
+  <div class="strip"><canvas id="kStrip" width="700" height="220" role="img" aria-label="Verlauf der Vibration"></canvas><p>Vibration der letzten 30 Sekunden</p></div>
+  <details class="diag"><summary>Gerätecheck</summary><dl id="kDiag"></dl></details>
 </section>
 
 <section id="sonar">
-  <div class="state" id="sState">Bereit</div>
-  <p class="lead">FMCW-Ultraschall 17,5–22 kHz, unhörbar. Misst Reflexionen nach Entfernung getrennt, erkennt Atmung (und bei guter Lage die Herzrate) der nächsten ruhigen Person. Lautstärke voll, Stummschalter aus.</p>
+  <div class="state" id="sState" role="status" aria-live="polite">Bereit</div>
+  <div class="detail" id="sDetail"></div>
+  <p class="lead">FMCW-Chirp ab 17,5 kHz – für manche Menschen und Tiere hörbar. Lautstärke voll, Stummschalter aus, keine Kopfhörer. Entfernungen beruhen auf einer automatischen Direktpfad-Kalibrierung und sind <b>nicht validiert</b>.</p>
   <button class="go" id="sGo">Sonar starten</button>
-  <div class="err" id="sErr"></div>
   <div class="read">
-    <div><b id="sBr">–</b><span>Atmung, Atemzüge/min</span><div class="bar" id="sBrB"><i></i></div></div>
-    <div><b id="sHr">–</b><span>Herzrate, Schläge/min (experimentell)</span><div class="bar" id="sHrB"><i></i></div></div>
-  </div>
-  <div class="read">
-    <div><b id="sRange">–</b><span>Entfernung der stärksten Person, m</span></div>
+    <div><b id="sPer">–</b><span>Periodische Bewegung, pro min</span><em id="sPerQ"></em></div>
+    <div><b id="sHr">–</b><span>Herzrate – Forschung, nicht freigegeben</span><em id="sHrQ"></em></div>
+    <div><b id="sRange">–</b><span>Entfernung Ziel, m (Näherung)</span><em id="sRangeQ"></em></div>
     <div><b id="sMov">–</b><span>Bewegung gesamt</span><div class="bar" id="sMovB"><i></i></div></div>
   </div>
-  <div class="strip"><canvas id="sRangeCv" width="700" height="220"></canvas><p id="sStripTxt">Entfernungsprofil: Reflexionsstärke je 0–4 m</p></div>
-  <div class="strip"><canvas id="sStrip" width="700" height="220"></canvas><p>Brustwand-Bewegung der gewählten Entfernung</p></div>
-  <div class="row" style="margin-top:12px"><button class="sec" id="sRec">Rohdaten aufzeichnen</button><button class="sec" id="sExp">Export</button></div>
-  <div class="hint" id="sRecHint">Zeichne 30–60 s auf, miss parallel eine Referenz (Atemzählen, Pulsuhr) und schicke die Datei zurück – daraus kalibriere ich die Schwellen auf dein Gerät.</div>
+  <div class="strip"><canvas id="sRangeCv" width="700" height="220" role="img" aria-label="Entfernungsprofil. Tippen wählt ein Ziel."></canvas><p id="sRangeTxt">Entfernungsprofil 0–4 m · grau: statische Reflexion · gelb: bewegte Echos · grau hinterlegt: nicht erfasst · Tippen wählt Ziel</p>
+    <div class="row" style="margin-top:8px"><button class="sec" id="sAuto">Ziel: automatisch</button></div></div>
+  <div class="strip"><canvas id="sStrip" width="700" height="220" role="img" aria-label="Bewegungsverlauf des Ziels"></canvas><p id="sStripTxt">Bewegungsverlauf am gewählten Ziel</p></div>
+  <div class="row" style="margin-top:12px"><button class="sec" id="sRec">Rohdaten aufzeichnen</button><button class="sec" id="sExp">Rohdaten exportieren</button></div>
+  <div class="hint" id="sRecHint">Rohdaten enthalten das komplette Mikrofonsignal, also auch hörbare Geräusche und Sprache. Grenze: 120 Sekunden.</div>
+  <details class="diag"><summary>Gerätecheck und Kalibrierung</summary><dl id="sDiag"></dl></details>
 </section>
 
 <section id="puls">
-  <div class="state" id="pState">Bereit</div>
-  <p class="lead">Gesicht oder Handfläche ruhig in den Rahmen, gutes Licht. Keine Bilder werden gespeichert.</p>
+  <div class="state" id="pState" role="status" aria-live="polite">Bereit</div>
+  <div class="detail" id="pDetail"></div>
+  <p class="lead">Gesicht oder Handfläche ruhig in den Rahmen, gleichmäßiges Licht. Bilder werden nicht gespeichert.</p>
   <button class="go" id="pGo">Kamera starten</button>
-  <div class="err" id="pErr"></div>
   <video id="pVid" playsinline muted autoplay></video>
   <div class="read">
     <div><b id="pQ">–</b><span>Signalqualität</span><div class="bar" id="pQB"><i></i></div></div>
-    <div><b id="pDur">0 s</b><span>Messdauer</span></div>
+    <div><b id="pDur">–</b><span>Gültiges Zeitfenster, s (Ziel 20)</span></div>
   </div>
-  <div class="strip"><canvas id="pStrip" width="700" height="220"></canvas><p>Pulswelle (Grünkanal, trendbereinigt)</p></div>
+  <div class="strip"><canvas id="pStrip" width="700" height="220" role="img" aria-label="Pulswelle"></canvas><p>Pulswelle (Grünkanal, trendbereinigt, letzte 10 s)</p></div>
+  <details class="diag"><summary>Gerätecheck</summary><dl id="pDiag"></dl></details>
 </section>
 
 <section id="flug">
-  <div class="state" id="fState">Bereit</div>
-  <p class="lead">Hört Überflüge. Aus der Doppler-Kurve folgen Geschwindigkeit, Abstand und der Zeitpunkt der größten Nähe – der Schlüssel für den späteren Abgleich mit Flugdaten.</p>
+  <div class="state" id="fState" role="status" aria-live="polite">Bereit</div>
+  <div class="detail" id="fDetail"></div>
+  <p class="lead">Hört tonale Geräusche 60–300 Hz und erkennt Spuren mit Frequenzabfall. Geschwindigkeit und Abstand werden nicht ausgegeben, solange das Quell- und Bewegungsmodell nicht validiert ist.</p>
   <button class="go" id="fGo">Mithören starten</button>
-  <div class="err" id="fErr"></div>
   <div class="read">
-    <div><b id="fV">–</b><span>Geschwindigkeit, m/s</span></div>
-    <div><b id="fD">–</b><span>Abstand bei größter Nähe, m</span></div>
+    <div><b id="fDrop">–</b><span>Frequenzabfall der Spur</span></div>
+    <div><b id="fCpa">–</b><span>Mittendurchgang (Uhrzeit)</span></div>
   </div>
-  <div class="strip"><canvas id="fStrip" width="700" height="220"></canvas><p id="fStripTxt">Spektrogramm 40–400 Hz, 90 Sekunden</p></div>
-  <div class="hint">Bei Flugzeuglärm steht der stärkste Ton mehrere Sekunden still und fällt dann hörbar ab. Der Abgleich mit ADS-B-Flugdaten passiert später aus dem Protokoll.</div>
+  <div class="strip"><canvas id="fStrip" width="700" height="220" role="img" aria-label="Spektrogramm"></canvas><p id="fStripTxt">Spektrogramm 40–400 Hz, 90 Sekunden</p></div>
+  <details class="diag"><summary>Gerätecheck</summary><dl id="fDiag"></dl></details>
 </section>
 
 <section id="log">
   <div class="ticker" style="margin-top:8px"><h3>Einsatzprotokoll</h3>
-    <div class="row"><button class="sec" id="lShare">Teilen</button><button class="sec" id="lCopy">Kopieren</button><button class="sec" id="lClear">Leeren</button></div>
-    <div class="hint" id="lHint">Zeitstempel in Gerätezeit, Konfidenz in Prozent.</div>
-    <ul class="log" id="lList" style="margin-top:8px"></ul>
+    <div class="row"><button class="sec" id="lShare">Teilen</button><button class="sec" id="lJson">JSON</button><button class="sec" id="lCsv">CSV</button><button class="sec" id="lClear">Leeren</button></div>
+    <div class="hint" id="lHint">Zeitstempel in Gerätezeit. Qualität als Stufe, nicht als Wahrscheinlichkeit.</div>
+    <ul class="log" id="lList"></ul>
   </div>
+  <details class="diag"><summary>Gerätecheck allgemein</summary><dl id="gDiag"></dl></details>
 </section>
-
 </main>
-<nav>
-  <button class="on" data-t="kontakt" data-n="Kontaktsensor"><svg viewBox="0 0 24 24"><path d="M3 12h3l2-6 4 12 3-8 2 2h4"/></svg>Kontakt</button>
-  <button data-t="sonar" data-n="Ultraschall-Sonar"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M12 4a8 8 0 0 1 8 8M12 8a4 4 0 0 1 4 4M4 12a8 8 0 0 1 8-8"/></svg>Sonar</button>
-  <button data-t="puls" data-n="Puls per Kamera"><svg viewBox="0 0 24 24"><path d="M20 12h-3l-2 5-4-10-2 5H4"/></svg>Puls</button>
-  <button data-t="flug" data-n="Überflug"><svg viewBox="0 0 24 24"><path d="M2 16l20-8-6 6 1 6-3-3-5 1z"/></svg>Überflug</button>
-  <button data-t="log" data-n="Einsatzprotokoll"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5zM8 9h8M8 13h8M8 17h5"/></svg>Protokoll</button>
+<nav aria-label="Modus">
+  <button class="on" data-t="kontakt" data-n="Kontaktsensor" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h3l2-6 4 12 3-8 2 2h4"/></svg>Kontakt<span class="dot"></span></button>
+  <button data-t="sonar" data-n="Ultraschall-Sonar"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="2"/><path d="M12 4a8 8 0 0 1 8 8M12 8a4 4 0 0 1 4 4M4 12a8 8 0 0 1 8-8"/></svg>Sonar<span class="dot"></span></button>
+  <button data-t="puls" data-n="Puls per Kamera"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12h-3l-2 5-4-10-2 5H4"/></svg>Puls<span class="dot"></span></button>
+  <button data-t="flug" data-n="Überflug"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 16l20-8-6 6 1 6-3-3-5 1z"/></svg>Überflug<span class="dot"></span></button>
+  <button data-t="log" data-n="Einsatzprotokoll"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM8 9h8M8 13h8M8 17h5"/></svg>Protokoll<span class="dot"></span></button>
 </nav>
 
 <script>
 (function(){
 'use strict';
+const VERSION='2.0.0-schritt1';
 const $=id=>document.getElementById(id);
-window.LB={level:0,color:'#35E0C8',alarm:false};
-let MODE='kontakt';const VALS={kontakt:['–','× Ruhe'],sonar:['–','Atemzüge / min'],puls:['–','Schläge / min'],flug:['–','Hz, stärkster Ton 60–300 Hz'],log:['','']};
+const C_SOUND=343;
+const COL={teal:'#35E0C8',amber:'#FFB020',red:'#FF5A5F',blue:'#5B98FF',muted:'#93A3B8',line:'rgba(120,150,190,.22)'};
+const fmt=d=>d.toTimeString().slice(0,8);
+const nf=(v,d)=>v.toLocaleString('de-DE',{minimumFractionDigits:d,maximumFractionDigits:d});
+const median=a=>{if(!a.length)return NaN;const s=Float64Array.from(a).sort();return s[s.length>>1]};
+window.__LB={};
+
+/* ================= Zustände ================= */
+const STATES={bereit:['Bereit',''],berechtigung:['Berechtigung erforderlich','live'],kalibrierung:['Kalibrierung','live'],laeuft:['Messung läuft','good'],unzureichend:['Signal unzureichend','bad'],unterbrochen:['Unterbrochen','bad'],beendet:['Beendet','']};
+function setState(p,key,detail){const el=$(p+'State');const st=STATES[key];el.textContent=st[0];el.className='state'+(st[1]?' '+st[1]:'');el.dataset.key=key;$(p+'Detail').textContent=detail||''}
+function setDetail(p,detail){$(p+'Detail').textContent=detail||''}
+function bar(id,v,cls){const b=$(id);b.className='bar'+(cls?' '+cls:'');b.firstElementChild.style.width=Math.max(0,Math.min(100,v*100))+'%'}
+function diag(id,obj){const dl=$(id);dl.textContent='';Object.keys(obj).forEach(k=>{const dt=document.createElement('dt');dt.textContent=k;const dd=document.createElement('dd');dd.textContent=obj[k];dl.append(dt,dd)})}
+
+/* ================= Anzeige Mitte ================= */
+let MODE='kontakt';
+const VALS={kontakt:['–','× Ruhe'],sonar:['–','Periodische Bewegung / min'],puls:['–','Schläge / min'],flug:['–','Hz, stärkster Ton'],log:['','']};
+const SC={kontakt:{level:0,hist:[],color:COL.teal},sonar:{level:0,hist:[],color:COL.teal},puls:{level:0,hist:[],color:COL.teal},flug:{level:0,hist:[],color:COL.teal}};
 function setVal(m,v){VALS[m][0]=v;if(m===MODE)$('val').textContent=v}
 function setLab(m,v){VALS[m][1]=v;if(m===MODE)$('lab').textContent=v}
+function scope(m,level,color){const s=SC[m];s.level=level;s.color=color;s.hist.push(level);if(s.hist.length>72)s.hist.shift()}
+function resetScope(m){const s=SC[m];s.level=0;s.hist=[];s.color=COL.teal}
 function showMode(m){MODE=m;$('val').textContent=VALS[m][0];$('lab').textContent=VALS[m][1];$('val').className='val'+(m==='flug'?' sm':'');$('scope').style.display=m==='log'?'none':''}
-(function bg(){
-  if(!window.THREE){return}
-  const cv=$('bg3d');const rd=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true,powerPreference:'low-power'});rd.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
-  const sc=new THREE.Scene();sc.fog=new THREE.FogExp2(0x070c16,0.09);
-  const cam=new THREE.PerspectiveCamera(55,1,0.1,100);cam.position.set(0,0.6,7.5);
-  function size(){const w=innerWidth,h=innerHeight;rd.setSize(w,h,false);cam.aspect=w/h;cam.updateProjectionMatrix()}size();addEventListener('resize',size);
-  // Partikelsphäre
-  const N=1800,pos=new Float32Array(N*3);for(let i=0;i<N;i++){const r=3.2+Math.random()*2.2,th=Math.acos(2*Math.random()-1),ph=Math.random()*Math.PI*2;pos[i*3]=r*Math.sin(th)*Math.cos(ph);pos[i*3+1]=r*Math.cos(th)*0.55;pos[i*3+2]=r*Math.sin(th)*Math.sin(ph)}
-  const pg=new THREE.BufferGeometry();pg.setAttribute('position',new THREE.BufferAttribute(pos,3));
-  const pm=new THREE.PointsMaterial({color:0x8fb4ff,size:0.045,transparent:true,opacity:0.55,blending:THREE.AdditiveBlending,depthWrite:false});const pts=new THREE.Points(pg,pm);sc.add(pts);
-  // Leuchtring
-  const ring=new THREE.Mesh(new THREE.TorusGeometry(2.6,0.025,16,220),new THREE.MeshBasicMaterial({color:0xffb020,transparent:true,opacity:0.9,blending:THREE.AdditiveBlending}));ring.rotation.x=Math.PI/2.6;sc.add(ring);
-  const ring2=new THREE.Mesh(new THREE.TorusGeometry(2.6,0.14,16,220),new THREE.MeshBasicMaterial({color:0xffb020,transparent:true,opacity:0.12,blending:THREE.AdditiveBlending}));ring2.rotation.x=Math.PI/2.6;sc.add(ring2);
-  const ring3=new THREE.Mesh(new THREE.TorusGeometry(3.4,0.012,12,220),new THREE.MeshBasicMaterial({color:0x5b98ff,transparent:true,opacity:0.35,blending:THREE.AdditiveBlending}));ring3.rotation.x=Math.PI/2.1;ring3.rotation.z=0.4;sc.add(ring3);
-  // Scan-Scheibe
-  const disk=new THREE.Mesh(new THREE.RingGeometry(0.2,2.55,96,1,0,0.9),new THREE.MeshBasicMaterial({color:0xffb020,transparent:true,opacity:0.08,side:THREE.DoubleSide,blending:THREE.AdditiveBlending}));disk.rotation.x=Math.PI/2.6;sc.add(disk);
-  const col=new THREE.Color();let t=0,lvl=0;const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
-  function frame(){t+=reduce?0.004:0.012;lvl+=(window.LB.level-lvl)*0.08;
-    col.set(window.LB.color||'#35E0C8');ring.material.color.copy(col);ring2.material.color.copy(col);disk.material.color.copy(col);
-    const s=1+lvl*0.35;ring.scale.set(s,s,s);ring2.scale.set(s,s,s);ring2.material.opacity=0.08+lvl*0.3;ring.material.opacity=0.6+lvl*0.4;
-    pts.rotation.y=t*0.25;pts.rotation.x=Math.sin(t*0.2)*0.12;pm.size=0.04+lvl*0.05;pm.opacity=0.4+lvl*0.4;
-    ring3.rotation.y=-t*0.3;disk.rotation.z=t*1.6;ring.rotation.z=t*0.1;ring2.rotation.z=t*0.1;
-    if(window.LB.alarm){const p=(Date.now()%900)/900;ring2.material.opacity=0.45*(1-p)+0.1;ring2.scale.setScalar(s+p*0.5)}
-    cam.position.x=Math.sin(t*0.15)*0.6;cam.lookAt(0,0,0);rd.render(sc,cam);requestAnimationFrame(frame)}
+(function scopeLoop(){
+  const cv=$('scope2d'),c=cv.getContext('2d');const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;let t=0,lv=0;
+  function frame(){requestAnimationFrame(frame);if(document.hidden||MODE==='log')return;t+=reduce?0.002:0.012;
+    const s=SC[MODE];lv+=(s.level-lv)*0.15;const W=cv.width,H=cv.height,cx=W/2,cy=H/2,R=W*0.45;c.clearRect(0,0,W,H);
+    c.lineWidth=2;for(let k=1;k<=4;k++){c.strokeStyle=k===4?'rgba(170,196,230,.55)':'rgba(111,141,179,.28)';c.beginPath();c.arc(cx,cy,R*k/4,0,7);c.stroke()}
+    c.strokeStyle='rgba(170,196,230,.45)';for(let d=0;d<360;d+=6){const a=d*Math.PI/180,l=d%30?8:18;c.beginPath();c.moveTo(cx+Math.cos(a)*(R-l),cy+Math.sin(a)*(R-l));c.lineTo(cx+Math.cos(a)*R,cy+Math.sin(a)*R);c.stroke()}
+    const h=s.hist,n=72;c.beginPath();for(let i=0;i<=n;i++){const v=h.length?(h[Math.floor(i/n*(h.length-1))]||0):0;const a=-Math.PI/2+i/n*Math.PI*2,r=R*(0.12+0.8*Math.min(1,v));const x=cx+Math.cos(a)*r,y=cy+Math.sin(a)*r;i?c.lineTo(x,y):c.moveTo(x,y)}
+    c.closePath();c.fillStyle=s.color+'26';c.fill();c.strokeStyle=s.color;c.lineWidth=3;c.stroke();
+    const sw=-Math.PI/2+t*2;const g=c.createConicGradient?c.createConicGradient(sw-0.9,cx,cy):null;
+    if(g){g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(0.14,s.color+'40');g.addColorStop(0.1433,'rgba(0,0,0,0)');c.fillStyle=g;c.beginPath();c.moveTo(cx,cy);c.arc(cx,cy,R,sw-0.9,sw);c.closePath();c.fill()}
+    c.strokeStyle=s.color;c.lineWidth=2;c.beginPath();c.moveTo(cx,cy);c.lineTo(cx+Math.cos(sw)*R,cy+Math.sin(sw)*R);c.stroke();
+    c.globalAlpha=0.25+0.6*lv;c.lineWidth=6+lv*14;c.strokeStyle=s.color;c.beginPath();c.arc(cx,cy,R*(0.12+0.8*lv),0,7);c.stroke();c.globalAlpha=1}
   frame();
 })();
-const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-const fmt=d=>d.toTimeString().slice(0,8);
 setInterval(()=>{$('clock').textContent=fmt(new Date())},1000);$('clock').textContent=fmt(new Date());
 
-document.querySelectorAll('nav button').forEach(b=>b.addEventListener('click',()=>{
-  document.querySelectorAll('nav button').forEach(x=>x.classList.remove('on'));
-  document.querySelectorAll('section').forEach(x=>x.classList.remove('on'));
-  b.classList.add('on');$(b.dataset.t).classList.add('on');$('sub').textContent=b.dataset.n;showMode(b.dataset.t);
-}));
+/* ================= Protokoll + IndexedDB ================= */
+const events=[],lastLog={};let db=null,dbErr='';
+function showLogHint(extra){$('lHint').textContent=(extra?extra+' ':'')+(dbErr?dbErr:(db?'Protokoll wird im Browser gespeichert.':''))}
+function openDB(){return new Promise(res=>{try{if(!window.indexedDB){dbErr='Dauerhafte Speicherung nicht verfügbar – Protokoll bitte exportieren.';return res()}
+  const r=indexedDB.open('lagebild-lite',1);r.onupgradeneeded=()=>{r.result.createObjectStore('events',{keyPath:'id',autoIncrement:true})};
+  r.onsuccess=()=>{db=r.result;res()};r.onerror=()=>{dbErr='Dauerhafte Speicherung nicht verfügbar ('+(r.error&&r.error.name)+') – Protokoll bitte exportieren.';res()};r.onblocked=()=>{dbErr='Protokollspeicher blockiert.';res()}
+}catch(e){dbErr='Dauerhafte Speicherung nicht verfügbar: '+e.message;res()}})}
+function persist(ev){if(!db)return;try{const tx=db.transaction('events','readwrite');tx.objectStore('events').add(ev);tx.onerror=()=>{dbErr='Speichern fehlgeschlagen: '+(tx.error&&tx.error.name);showLogHint()}}catch(e){dbErr='Speichern fehlgeschlagen: '+e.message;showLogHint()}}
+function logEvent(src,text,quality){const now=Date.now(),key=src+'|'+text;if(lastLog[key]&&now-lastLog[key]<4000)return;lastLog[key]=now;
+  const ev={t:new Date(now).toISOString(),mono_ms:+performance.now().toFixed(1),session:S.cur?S.cur.id:'',mode:src,text,quality:quality||'',version:VERSION};events.push(ev);persist(ev);renderLog()}
+function renderLog(){const ul=$('lList');ul.textContent='';if(!events.length){const li=document.createElement('li');const t=document.createElement('time');t.textContent='–';const sp=document.createElement('span');sp.textContent='Noch nichts erfasst.';li.append(t,sp,document.createElement('em'));ul.appendChild(li);return}
+  events.slice(-300).reverse().forEach(e=>{const li=document.createElement('li');const t=document.createElement('time');t.textContent=fmt(new Date(e.t));const sp=document.createElement('span');sp.textContent=e.text;const sm=document.createElement('small');sm.textContent=e.mode+(e.session?' · Sitzung '+e.session:'');sp.appendChild(sm);const em=document.createElement('em');em.textContent=e.quality||'';li.append(t,sp,em);ul.appendChild(li)})}
+(async function(){await openDB();if(db){try{const rq=db.transaction('events','readonly').objectStore('events').getAll();rq.onsuccess=()=>{events.unshift(...rq.result);renderLog();showLogHint()};rq.onerror=()=>{dbErr='Gespeichertes Protokoll konnte nicht geladen werden.';showLogHint()}}catch(e){dbErr='Laden fehlgeschlagen: '+e.message;showLogHint()}}else{renderLog();showLogHint()}})();
+const csvEsc=v=>{v=String(v==null?'':v);return /[";\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v};
+const logCsv=()=>['zeit;mono_ms;sitzung;modus;ereignis;qualitaet;version'].concat(events.map(e=>[e.t,e.mono_ms,e.session,e.mode,e.text,e.quality,e.version].map(csvEsc).join(';'))).join('\n');
+async function saveFile(name,blob){try{if(navigator.canShare&&navigator.share){const f=new File([blob],name,{type:blob.type});if(navigator.canShare({files:[f]})){await navigator.share({files:[f]});return 'Geteilt: '+name}}}catch(e){if(e&&e.name==='AbortError')return 'Abgebrochen.'}
+  try{const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),60000);return 'Heruntergeladen: '+name}catch(e){return 'Export nicht möglich: '+e.message}}
+const stamp=()=>new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+$('lJson').onclick=async()=>{showLogHint(await saveFile('lagebild-protokoll-'+stamp()+'.json',new Blob([JSON.stringify({version:VERSION,exported:new Date().toISOString(),userAgent:navigator.userAgent,events},null,1)],{type:'application/json'})))};
+$('lCsv').onclick=async()=>{showLogHint(await saveFile('lagebild-protokoll-'+stamp()+'.csv',new Blob([logCsv()],{type:'text/csv'})))};
+$('lShare').onclick=async()=>{const txt=events.map(e=>e.t+'\t'+e.mode+'\t'+e.text+(e.quality?'\t'+e.quality:'')).join('\n')||'Keine Ereignisse';
+  try{if(navigator.share){await navigator.share({title:'Lagebild Lite Protokoll',text:txt});showLogHint('Geteilt.')}else{await navigator.clipboard.writeText(txt);showLogHint('In die Zwischenablage kopiert.')}}catch(e){showLogHint(e.name==='AbortError'?'Abgebrochen.':'Teilen nicht möglich: '+e.message)}};
+$('lClear').onclick=()=>{events.length=0;renderLog();if(db){try{db.transaction('events','readwrite').objectStore('events').clear()}catch(e){dbErr='Löschen fehlgeschlagen: '+e.message}}showLogHint('Protokoll geleert.')};
 
-/* ---------- Protokoll ---------- */
-const events=[],lastLog={};
-function logEvent(src,text,conf){const now=Date.now(),key=src+'|'+text;if(lastLog[key]&&now-lastLog[key]<4000)return;lastLog[key]=now;events.push({t:new Date(now).toISOString(),src,text,conf});renderLog()}
-function renderLog(){const ul=$('lList');ul.innerHTML='';if(!events.length){ul.innerHTML='<li><time>–</time><span>Noch nichts erfasst. Starte einen Modus, Ereignisse erscheinen hier.</span><em></em></li>';return}
-  events.slice().reverse().slice(0,300).forEach(e=>{const li=document.createElement('li');li.innerHTML='<time>'+fmt(new Date(e.t))+'</time><span>'+e.text+'<br><span class="src">'+e.src+'</span></span><em>'+(e.conf!=null?Math.round(e.conf*100)+' %':'')+'</em>';ul.appendChild(li)})}
-renderLog();
-const logText=()=>events.map(e=>e.t+'\t'+e.src+'\t'+e.text+(e.conf!=null?'\t'+Math.round(e.conf*100)+'%':'')).join('\n');
-$('lShare').onclick=async()=>{const txt=logText()||'Keine Ereignisse';try{if(navigator.share)await navigator.share({title:'Lagebild Lite Protokoll',text:txt});else{await navigator.clipboard.writeText(txt);$('lHint').textContent='In die Zwischenablage kopiert.'}}catch(e){$('lHint').textContent='Teilen nicht möglich: '+e.message}};
-$('lCopy').onclick=async()=>{try{await navigator.clipboard.writeText(logText()||'Keine Ereignisse');$('lHint').textContent='In die Zwischenablage kopiert.'}catch(e){$('lHint').textContent='Kopieren nicht möglich.'}};
-$('lClear').onclick=()=>{events.length=0;renderLog();$('lHint').textContent='Protokoll geleert.'};
-
-/* ---------- Zeichnen ---------- */
-const AMB=()=>css('--amber'),TEAL=()=>css('--teal'),RED=()=>css('--red'),BLUE=()=>css('--blue');
-const SCOPE=(function(){
-  if(!window.THREE)return{update(){}};
-  const cv=$('scope3d');const rd=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true});rd.setPixelRatio(Math.min(2,window.devicePixelRatio||1));rd.setClearColor(0x000000,0);
-  const sc=new THREE.Scene();const cam=new THREE.PerspectiveCamera(38,1,0.1,50);cam.position.set(0,5.2,5.6);cam.lookAt(0,0,0);
-  function size(){const w=cv.clientWidth||300,h=cv.clientHeight||300;rd.setSize(w,h,false);cam.aspect=w/h;cam.updateProjectionMatrix()}size();addEventListener('resize',size);
-  const R=2.4,ADD=THREE.AdditiveBlending;
-  const circ=(r,n=128)=>{const p=[];for(let i=0;i<=n;i++){const a=i/n*Math.PI*2;p.push(new THREE.Vector3(Math.cos(a)*r,0,Math.sin(a)*r))}return new THREE.BufferGeometry().setFromPoints(p)};
-  [0.25,0.5,0.75,1].forEach((k,ix)=>{sc.add(new THREE.Line(circ(R*k),new THREE.LineBasicMaterial({color:ix===3?0xaac4e6:0x6f8db3,transparent:true,opacity:ix===3?0.8:0.35})))});
-  // Skalenstriche
-  const tp=[];for(let d=0;d<360;d+=5){const a=d*Math.PI/180,l=d%30?0.08:0.18;tp.push(new THREE.Vector3(Math.cos(a)*(R-l),0,Math.sin(a)*(R-l)),new THREE.Vector3(Math.cos(a)*R,0,Math.sin(a)*R))}
-  sc.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(tp),new THREE.LineBasicMaterial({color:0xaac4e6,transparent:true,opacity:0.55})));
-  const cross=[new THREE.Vector3(-R,0,0),new THREE.Vector3(R,0,0),new THREE.Vector3(0,0,-R),new THREE.Vector3(0,0,R)];sc.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(cross),new THREE.LineBasicMaterial({color:0x6f8db3,transparent:true,opacity:0.25})));
-  // Bodenscheibe
-  sc.add(new THREE.Mesh(new THREE.CircleGeometry(R,96).rotateX(-Math.PI/2),new THREE.MeshBasicMaterial({color:0x0e1a30,transparent:true,opacity:0.55})));
-  // Verlaufsfläche (Fan) + Wand
-  const N=60;const fanPos=new Float32Array((N+2)*3);const fanGeo=new THREE.BufferGeometry();fanGeo.setAttribute('position',new THREE.BufferAttribute(fanPos,3));
-  const fanIdx=[];for(let i=1;i<=N;i++){fanIdx.push(0,i,i%N+1)}fanGeo.setIndex(fanIdx);
-  const fanMat=new THREE.MeshBasicMaterial({color:0x35e0c8,transparent:true,opacity:0.22,side:THREE.DoubleSide,blending:ADD,depthWrite:false});const fan=new THREE.Mesh(fanGeo,fanMat);fan.position.y=0.01;sc.add(fan);
-  const wallPos=new Float32Array((N+1)*2*3);const wallGeo=new THREE.BufferGeometry();wallGeo.setAttribute('position',new THREE.BufferAttribute(wallPos,3));
-  const wIdx=[];for(let i=0;i<N;i++){const a=i*2,b=i*2+1,c=i*2+2,d=i*2+3;wIdx.push(a,b,c,b,d,c)}wallGeo.setIndex(wIdx);
-  const wallMat=new THREE.MeshBasicMaterial({color:0x35e0c8,transparent:true,opacity:0.28,side:THREE.DoubleSide,blending:ADD,depthWrite:false});sc.add(new THREE.Mesh(wallGeo,wallMat));
-  const rimGeo=new THREE.BufferGeometry();rimGeo.setAttribute('position',new THREE.BufferAttribute(new Float32Array((N+1)*3),3));const rim=new THREE.LineLoop(rimGeo,new THREE.LineBasicMaterial({color:0x35e0c8,transparent:true,opacity:0.95}));sc.add(rim);
-  // Sweep-Fächer
-  const wedges=[];for(let k=0;k<24;k++){const g=new THREE.RingGeometry(0.08,R,48,1,0,0.06).rotateX(-Math.PI/2);const m=new THREE.MeshBasicMaterial({color:0xffb020,transparent:true,opacity:0.22*(1-k/24),side:THREE.DoubleSide,blending:ADD,depthWrite:false});const w=new THREE.Mesh(g,m);w.position.y=0.02;sc.add(w);wedges.push(w)}
-  const beam=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0.02,0),new THREE.Vector3(R,0.02,0)]),new THREE.LineBasicMaterial({color:0xffb020,transparent:true,opacity:1}));sc.add(beam);
-  // Pegel-Säule und Kugel
-  const pole=new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,1,8),new THREE.MeshBasicMaterial({color:0xffb020,transparent:true,opacity:0.8,blending:ADD}));sc.add(pole);
-  const orb=new THREE.Mesh(new THREE.SphereGeometry(0.11,24,24),new THREE.MeshBasicMaterial({color:0xffb020}));sc.add(orb);
-  const halo=new THREE.Mesh(new THREE.SphereGeometry(0.26,24,24),new THREE.MeshBasicMaterial({color:0xffb020,transparent:true,opacity:0.25,blending:ADD,depthWrite:false}));sc.add(halo);
-  // Alarmring
-  const alarm=new THREE.Mesh(new THREE.RingGeometry(0.95,1,96).rotateX(-Math.PI/2),new THREE.MeshBasicMaterial({color:0xff5a5f,transparent:true,opacity:0,side:THREE.DoubleSide,blending:ADD,depthWrite:false}));alarm.position.y=0.03;sc.add(alarm);
-  const col=new THREE.Color();let st={level:0,hist:[],color:'#35E0C8',sweep:0},lvl=0,t=0;const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
-  function frame(){t+=0.016;lvl+=(st.level-lvl)*0.12;col.set(st.color);
-    fanMat.color.copy(col);wallMat.color.copy(col);rim.material.color.copy(col);wedges.forEach(w=>w.material.color.copy(col));beam.material.color.copy(col);pole.material.color.copy(col);orb.material.color.copy(col);halo.material.color.copy(col);
-    const h=st.hist,n=h.length;fanPos[0]=0;fanPos[1]=0;fanPos[2]=0;
-    for(let i=0;i<=N;i++){const v=n?Math.min(1,h[Math.min(n-1,Math.floor(i/N*n))%Math.max(1,n)]||0):0;const a=-Math.PI/2+i/N*Math.PI*2;const r=R*(0.12+0.86*v);const x=Math.cos(a)*r,z=Math.sin(a)*r,y=0.05+v*1.25;
-      if(i<N){fanPos[(i+1)*3]=x;fanPos[(i+1)*3+1]=0;fanPos[(i+1)*3+2]=z}
-      wallPos[i*6]=x;wallPos[i*6+1]=0;wallPos[i*6+2]=z;wallPos[i*6+3]=x;wallPos[i*6+4]=y;wallPos[i*6+5]=z;
-      if(i<N+1){rimGeo.attributes.position.array[i*3]=x;rimGeo.attributes.position.array[i*3+1]=y;rimGeo.attributes.position.array[i*3+2]=z}}
-    fanGeo.attributes.position.needsUpdate=true;wallGeo.attributes.position.needsUpdate=true;rimGeo.attributes.position.needsUpdate=true;
-    const sw=st.sweep==null?t*0.5%1:st.sweep;const a=-sw*Math.PI*2+Math.PI/2;wedges.forEach((w,k)=>{w.rotation.y=a-k*0.06});beam.rotation.y=a;
-    const lr=R*(0.12+0.86*lvl),ly=0.05+lvl*1.25;pole.position.set(0,ly/2,-lr);pole.scale.y=ly;orb.position.set(0,ly,-lr);halo.position.copy(orb.position);halo.scale.setScalar(1+Math.sin(t*4)*0.15);
-    if(st.color.toLowerCase()===RED().toLowerCase()){const p=(Date.now()%1100)/1100;alarm.scale.setScalar(0.2+p*2.3);alarm.material.opacity=0.8*(1-p)}else alarm.material.opacity=0;
-    cam.position.x=reduce?0:Math.sin(t*0.25)*0.9;cam.position.z=5.6+(reduce?0:Math.cos(t*0.25)*0.3);cam.lookAt(0,0.3,0);
-    if($('scope').style.display!=='none')rd.render(sc,cam);requestAnimationFrame(frame)}
-  frame();
-  return{update(o){st=o}};
-})();
-function scope(mode,level,hist,color,sweep){window.LB.level=level;window.LB.color=color;window.LB.alarm=(color===RED());if(mode===MODE)SCOPE.update({level,hist,color,sweep})}
-function strip(cv,arr,min,max,color){const c=cv.getContext('2d'),W=cv.width,H=cv.height;c.clearRect(0,0,W,H);c.strokeStyle=css('--line');c.lineWidth=1;c.beginPath();c.moveTo(0,H/2);c.lineTo(W,H/2);c.stroke();if(arr.length<2)return;c.save();c.shadowColor=color;c.shadowBlur=14;c.strokeStyle=color;c.lineWidth=3;c.beginPath();const n=arr.length;for(let i=0;i<n;i++){const x=i/(n-1)*W,y=H-((arr[i]-min)/((max-min)||1))*H;i?c.lineTo(x,y):c.moveTo(x,y)}c.stroke();c.restore()}
-function bar(id,v,cls){const b=$(id);b.className='bar'+(cls?' '+cls:'');b.firstElementChild.style.width=Math.max(0,Math.min(100,v*100))+'%'}
-function state(id,txt,cls){const s=$(id);s.textContent=txt;s.className='state'+(cls?' '+cls:'')}
-function go(id,on,a,b){const g=$(id);g.textContent=on?b:a;g.classList.toggle('stop',on)}
-async function getMic(){return navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false},video:false})}
-let actx=null;function ctx(){if(!actx)actx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});if(actx.state==='suspended')actx.resume();return actx}
-function dftPeak(series,fs,fmin,fmax){const n=series.length;let mean=0;for(const v of series)mean+=v;mean/=n;const x=series.map(v=>v-mean);let best={f:0,amp:0},sum=0,cnt=0;for(let f=fmin;f<=fmax;f+=0.01){let re=0,im=0;for(let i=0;i<n;i++){const ph=2*Math.PI*f*i/fs;re+=x[i]*Math.cos(ph);im+=x[i]*Math.sin(ph)}const a=Math.sqrt(re*re+im*im)/n;sum+=a;cnt++;if(a>best.amp)best={f,amp:a}}return{f:best.f,amp:best.amp,mean:sum/cnt}}
-
-/* ---------- Kontaktsensor ---------- */
-let kOn=false,kAcc=[],kBase=null,kT0=0,kAn=null,kBuf=null,kSeries=[],kHist=[];
-async function kStart(){
-  if(kOn){kOn=false;window.removeEventListener('devicemotion',kMotion);go('kGo',false,'Messung starten','Messung beenden');state('kState','Beendet');return}
-  $('kErr').textContent='';
-  let motionOk=true;
-  try{
-    if(typeof DeviceMotionEvent!=='undefined'&&typeof DeviceMotionEvent.requestPermission==='function'){try{const r=await DeviceMotionEvent.requestPermission();motionOk=(r==='granted')}catch(e){motionOk=false}}
-    const st=await getMic();const ac=ctx();const src=ac.createMediaStreamSource(st);kAn=ac.createAnalyser();kAn.fftSize=4096;kAn.smoothingTimeConstant=0.3;src.connect(kAn);kBuf=new Float32Array(kAn.frequencyBinCount);
-  }catch(e){$('kErr').textContent='Mikrofon nicht verfügbar: '+e.message+'. Die Seite muss direkt in Safari über HTTPS laufen, nicht in einem eingebetteten Fenster.';return}
-  if(!motionOk)$('kErr').textContent='Bewegungssensor in diesem Fenster gesperrt – es läuft nur der Körperschall über das Mikrofon. Auf eigener Adresse (GitHub Pages o. ä.) ist beides verfügbar.';
-  kOn=true;kBase=null;kT0=Date.now();kAcc=[];kSeries=[];kHist=[];go('kGo',true,'Messung starten','Messung beenden');window.addEventListener('devicemotion',kMotion);kLoop();
+/* ================= Sitzungsmanager ================= */
+class Stale extends Error{}
+const S={cur:null,n:0};
+const MODES={};// prefix, ended(key,detail)
+function newSession(mode){if(S.cur)stopSession('beendet','Neue Sitzung gestartet.');
+  const s={id:Date.now().toString(36)+'-'+(++S.n),mode,alive:true,running:false,tracks:[],nodes:[],ctx:null,timers:new Set(),listeners:[],onStop:[],t0:performance.now()};S.cur=s;syncButtons();return s}
+function sTimeout(s,fn,ms){const id=setTimeout(()=>{s.timers.delete(id);if(s.alive)fn()},ms);s.timers.add(id);return id}
+function sListen(s,target,ev,fn,opt){target.addEventListener(ev,fn,opt);s.listeners.push([target,ev,fn,opt])}
+function stopSession(key,detail){const s=S.cur;if(!s)return;s.alive=false;s.running=false;S.cur=null;
+  s.onStop.forEach(f=>{try{f()}catch(e){}});s.timers.forEach(id=>clearTimeout(id));s.timers.clear();
+  s.listeners.forEach(([t,e,f,o])=>{try{t.removeEventListener(e,f,o)}catch(x){}});s.listeners=[];
+  s.nodes.forEach(n=>{try{n.port&&n.port.postMessage({cmd:'stop'})}catch(e){}try{n.port&&(n.port.onmessage=null)}catch(e){}try{n.stop&&n.stop()}catch(e){}try{n.disconnect()}catch(e){}});s.nodes=[];
+  s.tracks.forEach(t=>{try{t.onended=null;t.onmute=null;t.stop()}catch(e){}});s.tracks=[];
+  if(s.ctx){const c=s.ctx;s.ctx=null;try{c.onstatechange=null;c.close()}catch(e){}}
+  syncButtons();const m=MODES[s.mode];if(m)m.ended(key||'beendet',detail||'');
+  if(key==='unterbrochen')logEvent(m?m.name:s.mode,'Messung unterbrochen: '+(detail||''),'');
 }
-function kMotion(e){if(!kOn)return;const a=e.acceleration||e.accelerationIncludingGravity;if(!a)return;kAcc.push(Math.hypot(a.x||0,a.y||0,a.z||0));if(kAcc.length>600)kAcc.shift()}
-function kLoop(){
-  if(!kOn)return;
-  let vib=0;if(kAcc.length>20){const w=kAcc.slice(-30);const m=w.reduce((s,v)=>s+v,0)/w.length;vib=Math.sqrt(w.reduce((s,v)=>s+(v-m)**2,0)/w.length)}
-  kAn.getFloatFrequencyData(kBuf);const binHz=48000/kAn.fftSize;
-  const band=(lo,hi)=>{let s=0,n=0;for(let i=Math.floor(lo/binHz);i<=Math.floor(hi/binHz);i++){s+=Math.pow(10,kBuf[i]/10);n++}return 10*Math.log10(s/n+1e-12)};
-  const low=band(20,80),voice=band(100,4000);const el=(Date.now()-kT0)/1000;
-  let level=0,color=TEAL();
-  if(el<5){state('kState','Kalibriere Ruhe, '+Math.ceil(5-el)+' s',"live");setVal('kontakt',Math.ceil(5-el));setLab('kontakt','Sekunden ruhig halten');if(!kBase)kBase={vib:[],low:[],voice:[]};kBase.vib.push(vib);kBase.low.push(low);kBase.voice.push(voice);color=AMB()}
+const BTN={kontakt:['kGo','Messung starten','Messung beenden'],sonar:['sGo','Sonar starten','Sonar beenden'],puls:['pGo','Kamera starten','Kamera beenden'],flug:['fGo','Mithören starten','Mithören beenden']};
+function syncButtons(){Object.keys(BTN).forEach(m=>{const [id,a,b]=BTN[m];const on=!!(S.cur&&S.cur.mode===m);$(id).textContent=on?b:a;$(id).classList.toggle('stop',on)});
+  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('run',!!(S.cur&&S.cur.mode===b.dataset.t)))}
+function startFail(s,e){if(e instanceof Stale||!s.alive)return;const n=e&&e.name;let key='unzureichend',d=(e&&e.message)||String(e);
+  if(n==='NotAllowedError'||n==='SecurityError'){key='berechtigung';d='Zugriff verweigert. In Safari: „aA“ → Website-Einstellungen → Zugriff erlauben, dann neu starten.'}
+  else if(n==='NotFoundError'||n==='OverconstrainedError'){d='Kein passendes Gerät gefunden.'}
+  else if(n==='NotReadableError'){d='Gerät wird von einer anderen Anwendung belegt.'}
+  stopSession(key,d)}
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&S.cur)stopSession('unterbrochen','Seite war im Hintergrund oder gesperrt – Werte verworfen. Bitte neu starten.')});
+window.addEventListener('pagehide',()=>{if(S.cur)stopSession('unterbrochen','Seite verlassen.')});
+
+/* ================= Gerätezugriff ================= */
+function setAudioSession(){try{if(navigator.audioSession)navigator.audioSession.type='play-and-record'}catch(e){}}
+function newCtx(s){const AC=window.AudioContext||window.webkitAudioContext;if(!AC)throw new Error('Web Audio ist in diesem Browser nicht verfügbar.');
+  const ctx=new AC();s.ctx=ctx;try{ctx.resume()}catch(e){}
+  ctx.onstatechange=()=>{if(s.alive&&s.running&&ctx.state!=='running')stopSession('unterbrochen','Audio vom System angehalten (Zustand „'+ctx.state+'“).')};return ctx}
+function motionPermission(){if(typeof DeviceMotionEvent==='undefined')return Promise.resolve('nicht verfügbar');
+  if(typeof DeviceMotionEvent.requestPermission==='function'){return DeviceMotionEvent.requestPermission().then(r=>r==='granted'?'erlaubt':'verweigert',()=>'verweigert')}return Promise.resolve('erlaubt')}
+function trackGuard(s,t){s.tracks.push(t);t.onended=()=>{if(s.alive)stopSession('unterbrochen','Datenstrom beendet ('+(t.kind==='audio'?'Mikrofon':'Kamera')+').')};
+  t.onmute=()=>{if(s.alive)stopSession('unterbrochen',(t.kind==='audio'?'Mikrofon':'Kamera')+' vom System stummgeschaltet (z. B. Anruf).')}}
+function needSecure(){if(!window.isSecureContext)throw new Error('Kein sicherer Kontext – Seite über HTTPS öffnen.');if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw new Error('getUserMedia ist nicht verfügbar. Seite direkt in Safari öffnen.')}
+async function getMic(s){needSecure();const sup=navigator.mediaDevices.getSupportedConstraints?navigator.mediaDevices.getSupportedConstraints():{};
+  const st=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false,channelCount:1},video:false});
+  if(!s.alive){st.getTracks().forEach(t=>t.stop());throw new Stale()}
+  st.getTracks().forEach(t=>trackGuard(s,t));const tr=st.getAudioTracks()[0];const set=tr&&tr.getSettings?tr.getSettings():{};
+  const f=k=>(k in set)?(set[k]?'an':'aus'):(sup[k]?'nicht gemeldet (unbekannt)':'nicht unterstützt (unbekannt)');
+  return{st,info:{'Echoauslöschung':f('echoCancellation'),'Rauschunterdrückung':f('noiseSuppression'),'Automatische Verstärkung':f('autoGainControl'),'Mikrofon-Abtastrate':set.sampleRate?set.sampleRate+' Hz':'unbekannt','Kanäle':set.channelCount||'unbekannt'},raw:{settings:set,supported:sup}}}
+function motionTracker(s){const m={last:0,ok:false,acc:[],rot:NaN,g:null,src:'–'};
+  sListen(s,window,'devicemotion',e=>{let x,y,z;const a=e.acceleration;
+    if(a&&a.x!=null){x=a.x;y=a.y;z=a.z;m.src='ohne Schwerkraft'}
+    else if(e.accelerationIncludingGravity&&e.accelerationIncludingGravity.x!=null){const g=e.accelerationIncludingGravity;if(!m.g)m.g={x:g.x,y:g.y,z:g.z};m.g.x+=0.05*(g.x-m.g.x);m.g.y+=0.05*(g.y-m.g.y);m.g.z+=0.05*(g.z-m.g.z);x=g.x-m.g.x;y=g.y-m.g.y;z=g.z-m.g.z;m.src='Schwerkraft gefiltert'}
+    else return;
+    m.last=performance.now();m.ok=true;const r=e.rotationRate;m.rot=r&&r.alpha!=null?Math.hypot(r.alpha||0,r.beta||0,r.gamma||0):NaN;
+    m.acc.push({t:e.timeStamp,v:Math.hypot(x,y,z)});while(m.acc.length&&m.acc[0].t<e.timeStamp-30000)m.acc.shift()});
+  m.fresh=()=>m.ok&&performance.now()-m.last<1000;
+  m.rms=ms=>{const now=m.acc.length?m.acc[m.acc.length-1].t:0;const w=m.acc.filter(o=>o.t>=now-ms);if(w.length<5)return NaN;const mu=w.reduce((s,o)=>s+o.v,0)/w.length;return Math.sqrt(w.reduce((s,o)=>s+(o.v-mu)**2,0)/w.length)};
+  m.moving=()=>m.fresh()&&((isFinite(m.rot)&&m.rot>15)||m.rms(500)>0.35);
+  return m}
+
+/* ================= Zeichnen ================= */
+function strip(cv,arr,min,max,color){const c=cv.getContext('2d'),W=cv.width,H=cv.height;c.clearRect(0,0,W,H);c.strokeStyle=COL.line;c.lineWidth=1;c.beginPath();c.moveTo(0,H/2);c.lineTo(W,H/2);c.stroke();
+  if(!arr||arr.length<2)return;c.strokeStyle=color;c.lineWidth=3;c.beginPath();const n=arr.length,span=(max-min)||1;for(let i=0;i<n;i++){const x=i/(n-1)*W,y=H-6-((arr[i]-min)/span)*(H-12);i?c.lineTo(x,y):c.moveTo(x,y)}c.stroke()}
+function clearCv(id){const cv=$(id);cv.getContext('2d').clearRect(0,0,cv.width,cv.height)}
+
+/* ================= Signalverarbeitung ================= */
+function makeFFT(n){const lev=Math.round(Math.log2(n));const rev=new Uint32Array(n);for(let i=0;i<n;i++){let r=0,x=i;for(let j=0;j<lev;j++){r=(r<<1)|(x&1);x>>=1}rev[i]=r}
+  const cs=new Float64Array(n/2),sn=new Float64Array(n/2);for(let i=0;i<n/2;i++){cs[i]=Math.cos(2*Math.PI*i/n);sn[i]=Math.sin(2*Math.PI*i/n)}
+  return function(re,im,inv){for(let i=0;i<n;i++){const j=rev[i];if(j>i){let t=re[i];re[i]=re[j];re[j]=t;t=im[i];im[i]=im[j];im[j]=t}}
+    for(let size=2;size<=n;size<<=1){const half=size>>1,step=n/size;for(let i=0;i<n;i+=size){for(let j=0,k=0;j<half;j++,k+=step){const wr=cs[k],wi=inv?sn[k]:-sn[k];const a=i+j,b=a+half;const tr=re[b]*wr-im[b]*wi,ti=re[b]*wi+im[b]*wr;re[b]=re[a]-tr;im[b]=im[a]-ti;re[a]+=tr;im[a]+=ti}}}
+    if(inv){for(let i=0;i<n;i++){re[i]/=n;im[i]/=n}}}}
+function dftPeak(y,fs,fmin,fmax,step,excl){const n=y.length;let best={f:0,amp:0},sum=0,cnt=0;
+  for(let f=fmin;f<=fmax+1e-9;f+=step){if(excl&&excl(f))continue;const w=2*Math.PI*f/fs,cw=Math.cos(w),sw=Math.sin(w);let re=0,im=0,c=1,s=0;
+    for(let i=0;i<n;i++){re+=y[i]*c;im+=y[i]*s;const nc=c*cw-s*sw;s=s*cw+c*sw;c=nc}const a=Math.hypot(re,im)/n;sum+=a;cnt++;if(a>best.amp)best={f,amp:a}}
+  return{f:best.f,amp:best.amp,mean:cnt?sum/cnt:0,prom:cnt&&sum?best.amp/(sum/cnt):0}}
+function circleFit(X,Y){const n=X.length;let mx=0,my=0;for(let i=0;i<n;i++){mx+=X[i];my+=Y[i]}mx/=n;my/=n;let suu=0,svv=0,suv=0,suuu=0,svvv=0,suvv=0,svuu=0;
+  for(let i=0;i<n;i++){const u=X[i]-mx,v=Y[i]-my;suu+=u*u;svv+=v*v;suv+=u*v;suuu+=u*u*u;svvv+=v*v*v;suvv+=u*v*v;svuu+=v*u*u}
+  const det=suu*svv-suv*suv;if(Math.abs(det)<1e-30)return{x:mx,y:my};const r1=0.5*(suuu+suvv),r2=0.5*(svvv+svuu);return{x:mx+(r1*svv-r2*suv)/det,y:my+(suu*r2-suv*r1)/det}}
+function detrend(y){const n=y.length;let sx=0,sy=0,sxx=0,sxy=0;for(let i=0;i<n;i++){sx+=i;sy+=y[i];sxx+=i*i;sxy+=i*y[i]}const d=n*sxx-sx*sx||1;const b=(n*sxy-sx*sy)/d,a=(sy-b*sx)/n;return y.map((v,i)=>v-a-b*i)}
+function hann(y){const n=y.length;return y.map((v,i)=>v*(0.5-0.5*Math.cos(2*Math.PI*i/(n-1))))}
+function smooth(y,w){if(w<2)return y.slice();const o=new Array(y.length);let s=0;for(let i=0;i<y.length;i++){s+=y[i];if(i>=w)s-=y[i-w];o[i]=s/Math.min(i+1,w)}return o}
+function zeroCross(y){let c=0;for(let i=1;i<y.length;i++)if((y[i-1]<0)!==(y[i]<0))c++;return c}
+function resample(t,v,fs){const T0=t[0],T1=t[t.length-1],n=Math.floor((T1-T0)*fs);const o=new Array(n);let j=0;for(let i=0;i<n;i++){const tt=T0+i/fs;while(j<t.length-2&&t[j+1]<tt)j++;const a=(tt-t[j])/((t[j+1]-t[j])||1);o[i]=v[j]+(v[j+1]-v[j])*Math.max(0,Math.min(1,a))}return o}
+function floatToWav(samples,fs){const buf=new ArrayBuffer(44+samples.length*2),v=new DataView(buf);const ws=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i))};
+  ws(0,'RIFF');v.setUint32(4,36+samples.length*2,true);ws(8,'WAVE');ws(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,fs,true);v.setUint32(28,fs*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);ws(36,'data');v.setUint32(40,samples.length*2,true);
+  let o=44;for(let i=0;i<samples.length;i++){const x=Math.max(-1,Math.min(1,samples[i]));v.setInt16(o,x<0?x*0x8000:x*0x7FFF,true);o+=2}return buf}
+
+/* ================= Kontaktsensor ================= */
+MODES.kontakt={name:'Kontakt',ended(key,d){setState('k',key,d);['kVib','kVoice','kLow','kMot'].forEach(i=>$(i).textContent='–');['kVibB','kVoiceB','kLowB'].forEach(i=>bar(i,0));setVal('kontakt','–');setLab('kontakt','× Ruhe');resetScope('kontakt')}};
+$('kGo').onclick=()=>{if(S.cur&&S.cur.mode==='kontakt'){stopSession('beendet','Messung beendet.');return}
+  const mp=motionPermission();const s=newSession('kontakt');setState('k','berechtigung','Bewegungssensor und Mikrofon freigeben …');
+  let ctx;try{needSecure();setAudioSession();ctx=newCtx(s)}catch(e){startFail(s,e);return}
+  (async()=>{try{const mstat=await mp;if(!s.alive)throw new Stale();const mic=await getMic(s);
+    const src=ctx.createMediaStreamSource(mic.st),an=ctx.createAnalyser();an.fftSize=4096;an.smoothingTimeConstant=0.3;src.connect(an);s.nodes.push(src,an);
+    const k={an,buf:new Float32Array(an.frequencyBinCount),fs:ctx.sampleRate,motion:mstat==='erlaubt'?motionTracker(s):null,mstat,calStart:performance.now(),cal:{vib:[],low:[],voice:[]},base:null,series:[],info:mic.info};
+    diag('kDiag',Object.assign({'Sitzung':s.id,'Bewegungssensor':mstat,'Audio-Abtastrate':ctx.sampleRate+' Hz'},mic.info));
+    s.running=true;setState('k','kalibrierung','Telefon 5 Sekunden ruhig liegen lassen …');kLoop(s,k)}catch(e){startFail(s,e)}})()};
+function kLoop(s,k){
+  const fresh=k.motion&&k.motion.fresh();const moving=k.motion&&k.motion.moving();
+  const vib=fresh?k.motion.rms(500):NaN;
+  k.an.getFloatFrequencyData(k.buf);const binHz=k.fs/k.an.fftSize;
+  const band=(lo,hi)=>{let sum=0,n=0;for(let i=Math.max(1,Math.floor(lo/binHz));i<=Math.min(k.buf.length-1,Math.floor(hi/binHz));i++){sum+=Math.pow(10,k.buf[i]/10);n++}return 10*Math.log10(sum/Math.max(1,n)+1e-12)};
+  const low=band(20,80),voice=band(100,4000);
+  $('kMot').textContent=!k.motion?(k.mstat==='verweigert'?'verweigert':'nicht verfügbar'):!fresh?'keine Daten':moving?'bewegt':'ruhig';
+  if(k.motion&&!fresh&&performance.now()-k.calStart>1500)setDetail('k','Bewegungssensor liefert keine Daten – nur Mikrofonpegel.');
+  let level=0,color=COL.teal;
+  if(!k.base){
+    if(moving){k.cal={vib:[],low:[],voice:[]};k.calStart=performance.now();setState('k','kalibrierung','Telefon bewegt – Kalibrierung neu gestartet. Bitte ruhig liegen lassen.')}
+    else{if(isFinite(vib))k.cal.vib.push(vib);k.cal.low.push(low);k.cal.voice.push(voice);const left=5-(performance.now()-k.calStart)/1000;setVal('kontakt',Math.max(0,Math.ceil(left)));setLab('kontakt','Sekunden ruhig halten');color=COL.amber;
+      if(left<=0){k.base={vib:k.cal.vib.length>10?Math.max(median(k.cal.vib),0.003):NaN,low:median(k.cal.low),voice:median(k.cal.voice)};setLab('kontakt','× Ruhe');setState('k','laeuft','Ruhe kalibriert.');logEvent('Kontakt','Ruhe kalibriert','')}}
+  }else if(moving){setState('k','unzureichend','Telefon bewegt – dieser Messabschnitt ist ungültig.');setVal('kontakt','–');color=COL.amber}
   else{
-    if(!kBase.done){const med=a=>{const s=a.slice().sort((x,y)=>x-y);return s[Math.floor(s.length/2)]};kBase.v=Math.max(med(kBase.vib),0.003);kBase.l=med(kBase.low);kBase.w=med(kBase.voice);kBase.done=true;logEvent('Kontakt','Ruhe kalibriert');setLab('kontakt','× Ruhe')}
-    const vr=vib/kBase.v;level=Math.min(1,Math.log10(1+vr)/1.3);setVal('kontakt',vr<10?vr.toFixed(1):Math.round(vr));
-    const dl=low-kBase.l,dw=voice-kBase.w;
-    $('kVoice').textContent=(dw>=0?'+':'')+dw.toFixed(0);bar('kVoiceB',Math.min(1,dw/25),dw>12?'bad':dw>6?'warn':'');
-    $('kLow').textContent=(dl>=0?'+':'')+dl.toFixed(0);bar('kLowB',Math.min(1,dl/25),dl>8?'bad':dl>5?'warn':'');
-    if(vr>6){state('kState','Schritt oder Stoß','bad');color=RED();logEvent('Kontakt','Vibration stark: Schritt oder Stoß ('+vr.toFixed(0)+'× Ruhe)',Math.min(.95,.5+vr/40))}
-    else if(dw>12){state('kState','Stimme oder Geräusch','bad');color=RED();logEvent('Kontakt','Körperschall: Stimme oder Geräusch (+'+dw.toFixed(0)+' dB)',Math.min(.9,.5+dw/40))}
-    else if(dl>8){state('kState','Tür oder Maschine','live');color=AMB();logEvent('Kontakt','Tieffrequent: Tür oder Maschine (+'+dl.toFixed(0)+' dB)',.6)}
-    else if(vr>2.5||Math.max(dl,dw)>5){state('kState','Leichte Aktivität','live');color=AMB()}
-    else state('kState','Ruhig','good');
+    const vr=isFinite(vib)&&isFinite(k.base.vib)?vib/k.base.vib:NaN;
+    const dl=low-k.base.low,dw=voice-k.base.voice;
+    if(isFinite(vr)){$('kVib').textContent=vr<10?nf(vr,1):Math.round(vr);bar('kVibB',Math.min(1,Math.log10(1+vr)/1.3),vr>6?'bad':vr>2.5?'warn':'');setVal('kontakt',vr<10?nf(vr,1):Math.round(vr));level=Math.min(1,Math.log10(1+vr)/1.3)}
+    else{$('kVib').textContent='–';bar('kVibB',0);setVal('kontakt','–')}
+    $('kVoice').textContent=(dw>=0?'+':'')+dw.toFixed(0);bar('kVoiceB',Math.min(1,Math.max(0,dw)/25),dw>12?'bad':dw>6?'warn':'');
+    $('kLow').textContent=(dl>=0?'+':'')+dl.toFixed(0);bar('kLowB',Math.min(1,Math.max(0,dl)/25),dl>8?'bad':dl>5?'warn':'');
+    level=Math.max(level,Math.min(1,Math.max(dw,dl,0)/25));
+    let msg='Ruhig',st='laeuft';
+    if(vr>6){msg='Starke Vibration ('+Math.round(vr)+'× Ruhe)';color=COL.red;logEvent('Kontakt','Starke Vibration, '+Math.round(vr)+'× Ruhe','stark')}
+    else if(dw>12){msg='Pegelanstieg 100–4000 Hz (+'+dw.toFixed(0)+' dB)';color=COL.red;logEvent('Kontakt','Pegelanstieg 100–4000 Hz, +'+dw.toFixed(0)+' dB','deutlich')}
+    else if(dl>8){msg='Pegelanstieg 20–80 Hz (+'+dl.toFixed(0)+' dB)';color=COL.amber;logEvent('Kontakt','Pegelanstieg 20–80 Hz, +'+dl.toFixed(0)+' dB','deutlich')}
+    else if(vr>2.5||Math.max(dl,dw)>5){msg='Leichte Aktivität';color=COL.amber}
+    setState('k',st,msg+(isFinite(vr)?'':' · Vibration: keine Daten'));
+    k.series.push(isFinite(vib)?vib:0);if(k.series.length>300)k.series.shift();
   }
-  kHist.push(level);if(kHist.length>60)kHist.shift();kSeries.push(vib);if(kSeries.length>300)kSeries.shift();
-  scope('kontakt',level,kHist,color,(el%4)/4);strip($('kStrip'),kSeries,0,Math.max(0.05,...kSeries),color);
-  setTimeout(kLoop,100);
+  scope('kontakt',level,color);strip($('kStrip'),k.series,0,Math.max(0.05,...k.series),color);
+  sTimeout(s,()=>kLoop(s,k),100);
 }
-$('kGo').onclick=kStart;
 
-/* ---------- Sonar: FMCW ---------- */
-/* FMCW-Chirp 17.5-22 kHz, Sweep 40 ms. Dechirp per Multiplikation mit synchroner
-   Referenz, FFT -> Beat-Frequenz = Entfernung. Pro Range-Bin Phase ueber Zeit ->
-   Atmung (0.12-0.6 Hz) und Herzschlag (0.8-2.5 Hz). Slow-time Clutter-Removal. */
-let sOn=false,sNodes=[],sRec=false,sRecBuf=[],sRecMeta=null;
-const FLO=17500,FHI=22000,TSWEEP=0.040; // 40 ms
-let sFs=48000,sNper=0,sRef=null,sRefMix=null,sRange=[],sBinHist=[],sSlow=null,sT0=0,sLastBr=0,sLastHr=0,sChosen=12;
-function buildRef(){
-  sNper=Math.round(TSWEEP*sFs);
-  sRefMix={cos:new Float32Array(sNper),sin:new Float32Array(sNper)};
-  for(let n=0;n<sNper;n++){const f=FLO+(FHI-FLO)*(n/sNper);const ph=2*Math.PI*(FLO*n/sFs+0.5*(FHI-FLO)/sFs*n*n/sNper);sRefMix.cos[n]=Math.cos(ph);sRefMix.sin[n]=Math.sin(ph)}
-  sRef=new Float32Array(sNper);for(let n=0;n<sNper;n++){const ph=2*Math.PI*(FLO*n/sFs+0.5*(FHI-FLO)/sFs*n*n/sNper);sRef[n]=Math.sin(ph)*(0.5-0.5*Math.cos(2*Math.PI*n/sNper))}
+/* ================= Sonar (FMCW, AudioWorklet) ================= */
+const SON_N=2048,SON_MAXR=4.0,SON_BIN=8;
+const WORKLET_SRC=`class LbSonar extends AudioWorkletProcessor{
+constructor(o){super();const p=o.processorOptions;this.ref=p.ref;this.N=this.ref.length;this.gain=p.gain;this.on=true;this.rec=new Float32Array(this.N);this.last=-1;this.seq=0;this.clip=0;this.noIn=0;this.gap=0;
+this.port.onmessage=e=>{const d=e.data;if(d.cmd==='stop')this.on=false;else if(d.cmd==='gain')this.gain=d.v}}
+process(inputs,outputs){if(!this.on)return false;const f0=currentFrame;const out=outputs[0];const n=out[0]?out[0].length:128;
+if(this.last>=0&&f0!==this.last+n)this.gap++;this.last=f0;const inp=inputs[0]&&inputs[0].length?inputs[0][0]:null;if(!inp)this.noIn++;
+const N=this.N,ref=this.ref,g=this.gain;for(let i=0;i<n;i++){const f=f0+i,p=f%N,s=ref[p]*g;for(let c=0;c<out.length;c++)out[c][i]=s;const x=inp?inp[i]:0;if(x>0.98||x<-0.98)this.clip++;this.rec[p]=x;
+if(p===N-1){this.port.postMessage({seq:this.seq++,frame:f-N+1,data:this.rec,clip:this.clip,noIn:this.noIn,gap:this.gap},[this.rec.buffer]);this.rec=new Float32Array(N);this.clip=0;this.noIn=0;this.gap=0}}
+return true}}
+registerProcessor('lb-sonar',LbSonar);`;
+function makeChirp(N,fs,f0,f1){const r=new Float32Array(N),T=N/fs,k=(f1-f0)/T,tap=Math.round(N*0.06);for(let n=0;n<N;n++){const t=n/fs;let w=1;if(n<tap)w=0.5-0.5*Math.cos(Math.PI*n/tap);else if(n>N-1-tap)w=0.5-0.5*Math.cos(Math.PI*(N-1-n)/tap);r[n]=Math.sin(2*Math.PI*(f0*t+0.5*k*t*t))*w}return r}
+let SON=null;// Zustand der letzten Sonarsitzung (für Export)
+MODES.sonar={name:'Sonar',ended(key,d){setState('s',key,d);['sPer','sHr','sRange','sMov'].forEach(i=>$(i).textContent='–');['sPerQ','sHrQ','sRangeQ'].forEach(i=>$(i).textContent='');bar('sMovB',0);setVal('sonar','–');resetScope('sonar');
+  if(SON&&SON.rec&&SON.rec.on){SON.rec.on=false;$('sRec').textContent='Rohdaten aufzeichnen';$('sRec').classList.remove('on');$('sRecHint').textContent='Aufzeichnung mit Sitzungsende beendet: '+SON.rec.blocks.length+' Sweeps ('+nf(SON.rec.blocks.length*SON.N/SON.fs,0)+' s). Export möglich.'}}};
+$('sGo').onclick=()=>{if(S.cur&&S.cur.mode==='sonar'){stopSession('beendet','Sonar beendet.');return}
+  const mp=motionPermission();const s=newSession('sonar');setState('s','berechtigung','Mikrofon und Bewegungssensor freigeben …');
+  let ctx;try{needSecure();setAudioSession();ctx=newCtx(s)}catch(e){startFail(s,e);return}
+  (async()=>{try{
+    const mstat=await mp;if(!s.alive)throw new Stale();
+    const mic=await getMic(s);
+    if(!ctx.audioWorklet||typeof AudioWorkletNode==='undefined')throw new Error('AudioWorklet ist nicht verfügbar – Sonar in diesem Browser nicht nutzbar.');
+    const url=URL.createObjectURL(new Blob([WORKLET_SRC],{type:'application/javascript'}));
+    try{await ctx.audioWorklet.addModule(url)}catch(e){throw new Error('AudioWorklet konnte nicht geladen werden ('+(e.name||e.message)+') – Sonar nicht verfügbar.')}finally{URL.revokeObjectURL(url)}
+    if(!s.alive)throw new Stale();
+    const fs=ctx.sampleRate,N=SON_N,f0=17500,f1=Math.min(22000,0.45*fs);
+    if(f1-f0<1500)throw new Error('Abtastrate '+fs+' Hz zu niedrig für das Sonarband.');
+    const ref=makeChirp(N,fs,f0,f1),fft=makeFFT(N);const Rre=Float64Array.from(ref),Rim=new Float64Array(N);fft(Rre,Rim,false);
+    {const k0=Math.floor(f0/fs*N),k1=Math.ceil(f1/fs*N);for(let k=0;k<N;k++){let w=0;if(k>=k0&&k<=k1)w=0.5-0.5*Math.cos(2*Math.PI*(k-k0)/(k1-k0));Rre[k]*=w;Rim[k]*=w}}// Nebenzipfel der Korrelation senken
+    const dmax=Math.ceil(SON_MAXR*2*fs/C_SOUND),NB=Math.ceil(dmax/SON_BIN);
+    const st={s,fs,N,f0,f1,ref,fft,Rre,Rim,dmax,NB,gain:0.8,cal:null,calN:0,calAcc:new Float64Array(N),calStart:performance.now(),calTries:0,calCount:0,
+      emaRe:new Float64Array(dmax),emaIm:new Float64Array(dmax),emaInit:false,E:new Float64Array(NB),Sm:new Float64Array(NB),noise:0,motionLevel:0,
+      target:{auto:true,bin:-1,tau:-1,since:0,cand:-1,candSince:0,lost:false,lowSince:0},ser:{re:[],im:[],t:[]},serBreak:'Start',
+      lastSeq:-1,lastBlockAt:performance.now(),gaps:0,clips:0,blocks:0,invalid:0,tauShift:0,weak:0,lastInvalid:'',
+      rec:null,info:mic.info,raw:mic.raw,mstat,motion:mstat==='erlaubt'?motionTracker(s):null,vit:null,lastVit:0,lastPer:0,lastHr:0,node:null};
+    SON=st;window.__LB.sonar=st;
+    $('sRec').textContent='Rohdaten aufzeichnen';$('sRec').classList.remove('on');$('sRecHint').textContent='Rohdaten enthalten das komplette Mikrofonsignal, also auch hörbare Geräusche und Sprache. Grenze: 120 Sekunden.';
+    const node=new AudioWorkletNode(ctx,'lb-sonar',{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[2],processorOptions:{ref,gain:st.gain}});st.node=node;
+    const src=ctx.createMediaStreamSource(mic.st);s.nodes.push(node,src);src.connect(node);node.connect(ctx.destination);
+    node.port.onmessage=e=>{if(s.alive)sonarBlock(st,e.data)};
+    node.onprocessorerror=()=>{if(s.alive)stopSession('unzureichend','Fehler im AudioWorklet – Sender gestoppt.')};
+    s.running=true;setState('s','kalibrierung','Eigenen Sendeton suchen und Laufzeit der Audiokette bestimmen …');
+    sonarDiag(st);sonarWatch(st);sonarRenderLoop(st);
+  }catch(e){startFail(s,e)}})()};
+function sonarWatch(st){const s=st.s;if(performance.now()-st.lastBlockAt>1500){stopSession('unterbrochen','Keine Audiodaten mehr vom Mikrofon. Sender gestoppt.');return}sTimeout(s,()=>sonarWatch(st),400)}
+function breakSeries(st,reason){if(st.ser.re.length)st.ser={re:[],im:[],t:[]};st.serBreak=reason;st.vit=null}
+function resetCal(st,reason){st.cal=null;st.calN=0;st.calAcc.fill(0);st.calStart=performance.now();st.emaInit=false;st.E.fill(0);st.target.bin=-1;st.target.tau=-1;st.target.lost=false;breakSeries(st,reason);
+  if(st.s.alive)setState('s','kalibrierung',reason+' – kalibriere neu …');logEvent('Sonar','Neukalibrierung: '+reason,'')}
+function sonarBlock(st,d){
+  st.lastBlockAt=performance.now();if(d.seq===0)return;
+  let bad='';
+  if(st.lastSeq>=0&&d.seq!==st.lastSeq+1){st.gaps++;bad='Audioblock verloren'}
+  if(d.gap>0){st.gaps++;bad='Zeitlücke in der Audioverarbeitung'}
+  st.lastSeq=d.seq;
+  if(d.noIn>0)bad='Kein Mikrofonsignal im Block';
+  if(st.rec&&st.rec.on)recordBlock(st,d);
+  if(d.clip>0){st.clips++;bad='Übersteuerung';
+    if(st.gain>0.12&&performance.now()-(st.lastGainDrop||0)>800){st.gain*=0.7;st.lastGainDrop=performance.now();try{st.node.port.postMessage({cmd:'gain',v:st.gain})}catch(e){}resetCal(st,'Übersteuerung, Sendepegel auf '+Math.round(st.gain*100)+' % der Startstufe reduziert')}}
+  if(bad){st.invalid++;st.lastInvalid=bad;breakSeries(st,bad);return}
+  st.blocks++;
+  const N=st.N,re=new Float64Array(N),im=new Float64Array(N),x=d.data;for(let i=0;i<N;i++)re[i]=x[i];
+  st.fft(re,im,false);
+  for(let k=0;k<N;k++){const a=re[k],b=im[k],rr=st.Rre[k],ri=st.Rim[k];const w=(k===0||k===N/2)?1:(k<N/2?2:0);re[k]=(a*rr+b*ri)*w;im[k]=(b*rr-a*ri)*w}
+  st.fft(re,im,true);
+  if(!st.cal){sonarCalibrate(st,re,im);return}
+  sonarProcess(st,re,im,d);
 }
-// einfache DFT auf Beat-Band (0..~? Hz). Range-Aufloesung c/(2*B). B=4500 Hz -> ~3.8 cm/bin bei passender Beat-Skalierung.
-const NB=64; // 64 Range-Bins
-function dechirp(block){ // block length sNper -> complex range profile (NB bins)
-  // mix
-  const I=new Float32Array(sNper),Q=new Float32Array(sNper);
-  for(let n=0;n<sNper;n++){I[n]=block[n]*sRefMix.cos[n];Q[n]=block[n]*sRefMix.sin[n]}
-  // beat-DFT: max beat freq entspricht max range ~4 m
-  const C=343, B=FHI-FLO, maxR=4.0, fbMax=2*maxR*B/(C*TSWEEP);
-  const re=new Float32Array(NB),im=new Float32Array(NB);
-  for(let k=0;k<NB;k++){const fb=fbMax*k/NB;let rr=0,ii=0;for(let n=0;n<sNper;n++){const ph=2*Math.PI*fb*n/sFs;rr+=I[n]*Math.cos(ph)+Q[n]*Math.sin(ph);ii+=Q[n]*Math.cos(ph)-I[n]*Math.sin(ph)}re[k]=rr/sNper;im[k]=ii/sNper}
-  return{re,im};
+function sonarCalibrate(st,re,im){const N=st.N;for(let i=0;i<N;i++)st.calAcc[i]+=Math.hypot(re[i],im[i]);st.calN++;
+  const need=Math.round(1.5*st.fs/N);if(st.calN<need)return;
+  const m=Array.from(st.calAcc,v=>v/st.calN);let pk=0,t0=0;for(let i=0;i<N;i++)if(m[i]>pk){pk=m[i];t0=i}const med=median(m);const snr=pk/(med||1e-12);
+  if(snr<8){st.calTries++;st.calN=0;st.calAcc.fill(0);
+    if(performance.now()-st.calStart>6000)setState('s','unzureichend','Eigener Sendeton nicht gefunden (Verhältnis '+nf(snr,1)+', nötig 8). Lautstärke voll? Stummschalter aus? Lautsprecher und Mikrofon frei? Keine Kopfhörer oder Bluetooth?');
+    sonarDiag(st);return}
+  let ne=0;while(ne<st.dmax&&m[(t0+ne)%N]>pk*0.1)ne++;
+  st.calCount++;st.cal={tau0:t0,peak:pk,snr,near:ne,nearR:ne*C_SOUND/(2*st.fs),id:'auto-direktpfad-'+st.s.id+'-'+st.calCount,t:new Date().toISOString(),validated:false,gain:st.gain};
+  st.emaInit=false;st.E.fill(0);st.target.bin=-1;st.target.tau=-1;st.tauShift=0;st.weak=0;breakSeries(st,'Kalibrierung');
+  setState('s','laeuft','Kalibriert. Nahbereich bis ≈ '+nf(st.cal.nearR,2)+' m nicht erfasst. Entfernungen nicht validiert.');
+  logEvent('Sonar','Selbsttest bestanden: Direktpfad gefunden (Verhältnis '+nf(snr,0)+'), Nahbereich bis ≈ '+nf(st.cal.nearR,2)+' m nicht erfasst','Kalibrierung '+st.cal.id);sonarDiag(st)}
+function sonarProcess(st,re,im,d){
+  const N=st.N,cal=st.cal,dmax=st.dmax,NB=st.NB,BIN=SON_BIN;
+  // Direktpfad überwachen (Zeitbasis, Verdeckung)
+  let pk=0,pi=0;for(let o=-6;o<=6;o++){const i=(cal.tau0+o+N)%N,v=Math.hypot(re[i],im[i]);if(v>pk){pk=v;pi=o}}
+  st.tauShift=Math.abs(pi)>3?st.tauShift+1:0;if(st.tauShift>=5){resetCal(st,'Laufzeit der Audiokette hat sich verschoben');return}
+  st.weak=pk<cal.peak*0.3?st.weak+1:0;if(st.weak>=12){resetCal(st,'Direktsignal stark abgefallen (Lautsprecher oder Mikrofon verdeckt?)');return}
+  // statische und bewegte Anteile
+  const a=0.03;const E=new Float64Array(NB),Sm=new Float64Array(NB);
+  for(let dt=0;dt<dmax;dt++){const i=(cal.tau0+dt)%N,cr=re[i],ci=im[i];
+    if(!st.emaInit){st.emaRe[dt]=cr;st.emaIm[dt]=ci}else{st.emaRe[dt]+=a*(cr-st.emaRe[dt]);st.emaIm[dt]+=a*(ci-st.emaIm[dt])}
+    const mr=cr-st.emaRe[dt],mi=ci-st.emaIm[dt],b=(dt/BIN)|0;E[b]+=mr*mr+mi*mi;const sv=Math.hypot(st.emaRe[dt],st.emaIm[dt]);if(sv>Sm[b])Sm[b]=sv}
+  st.emaInit=true;
+  for(let b=0;b<NB;b++){st.E[b]=0.8*st.E[b]+0.2*E[b];st.Sm[b]=Sm[b]}
+  const nb0=Math.ceil(cal.near/BIN)+1;const tail=Array.from(st.E.slice(nb0));st.noise=median(tail)||1e-12;
+  // Telefonbewegung
+  const phoneMoving=st.motion&&st.motion.moving();if(phoneMoving)breakSeries(st,'Telefon bewegt');
+  // Zielwahl
+  const T=st.target,now=performance.now();let best=nb0;for(let b=nb0;b<NB;b++)if(st.E[b]>st.E[best])best=b;
+  // Bewegung im Raum: Anteil aktiver Entfernungsbereiche außerhalb der Zielumgebung (breit verteilte Bewegung)
+  const tb=T.bin>=0?T.bin:best;const thr=Math.max(8*st.noise,st.E[best]*0.06);let act=0,cnt=0;for(let b=nb0;b<NB;b++){if(Math.abs(b-tb)<=6)continue;cnt++;if(st.E[b]>thr)act++}
+  const spread=cnt?act/cnt:0;st.spread=spread;st.motionLevel=Math.min(1,spread*5);
+  st.targetAct=T.bin>=0?Math.min(1,Math.max(0,Math.log10(st.E[T.bin]/st.noise))/3):0;
+  const pickTau=b=>{let mv=-1,ti=b*BIN;for(let dt=b*BIN;dt<Math.min(dmax,(b+1)*BIN);dt++){const i=(cal.tau0+dt)%N,v=Math.hypot(re[i],im[i]);if(v>mv){mv=v;ti=dt}}return ti};
+  const setTarget=(b,why)=>{T.bin=b;T.tau=pickTau(b);T.since=now;T.lost=false;T.lowSince=0;breakSeries(st,why)};
+  if(T.auto){if(T.bin<0){if(st.E[best]>st.noise*4)setTarget(best,'Ziel gewählt')}
+    else if(best!==T.bin&&st.E[best]>2*st.E[T.bin]){if(T.cand!==best){T.cand=best;T.candSince=now}else if(now-T.candSince>2000){setTarget(best,'Zielwechsel');T.cand=-1}}else T.cand=-1}
+  if(T.bin>=0){const alive=st.E[T.bin]>st.noise*2.5;if(!alive){if(!T.lowSince)T.lowSince=now;if(now-T.lowSince>3000&&!T.lost){T.lost=true;breakSeries(st,'Ziel verloren');if(!T.auto)logEvent('Sonar','Gewähltes Ziel verloren','')}}else{T.lowSince=0;if(T.lost){T.lost=false;breakSeries(st,'Ziel wiedergefunden')}}
+    if(T.lost&&T.auto){T.bin=-1;T.tau=-1}}
+  // Zeitreihe am Ziel (samplebasierte Zeit)
+  if(T.bin>=0&&!T.lost&&!phoneMoving){const i=(cal.tau0+T.tau)%N;st.ser.re.push(re[i]);st.ser.im.push(im[i]);st.ser.t.push(d.frame/st.fs);
+    if(st.ser.re.length>Math.round(70*st.fs/N)){st.ser.re.shift();st.ser.im.shift();st.ser.t.shift()}}
+  if(now-st.lastVit>1000){st.lastVit=now;sonarVitals(st)}
 }
-async function sStart(){
-  if(sOn){sOn=false;sNodes.forEach(n=>{try{n.stop&&n.stop()}catch(e){}try{n.disconnect()}catch(e){}});sNodes=[];go('sGo',false,'Sonar starten','Sonar beenden');state('sState','Beendet');return}
-  $('sErr').textContent='';
-  let ac,st;
-  try{st=await getMic();ac=ctx();sFs=ac.sampleRate||48000;buildRef();}
-  catch(e){$('sErr').textContent='Mikrofon nicht verf\u00fcgbar: '+e.message+'. Direkt in Safari \u00fcber HTTPS \u00f6ffnen.';return}
-  // Sender: periodischer Chirp via BufferSource (loop)
-  const buf=ac.createBuffer(1,sNper,sFs);buf.copyToChannel(sRef,0);
-  const srcNode=ac.createBufferSource();srcNode.buffer=buf;srcNode.loop=true;const g=ac.createGain();g.gain.value=0.9;srcNode.connect(g).connect(ac.destination);srcNode.start();
-  // Empfang
-  const mic=ac.createMediaStreamSource(st);
-  const proc=ac.createScriptProcessor(Math.max(2048,1<<Math.ceil(Math.log2(sNper))),1,1);
-  let carry=new Float32Array(0);
-  proc.onaudioprocess=ev=>{
-    const x=ev.inputBuffer.getChannelData(0);
-    let cat=new Float32Array(carry.length+x.length);cat.set(carry);cat.set(x,carry.length);
-    let off=0;
-    while(cat.length-off>=sNper){
-      const block=cat.subarray(off,off+sNper);off+=sNper;
-      if(sRec){const c=new Float32Array(sNper);c.set(block);sRecBuf.push(c)}
-      const prof=dechirp(block);processProfile(prof,ac.currentTime);
-    }
-    carry=cat.slice(off);
-  };
-  mic.connect(proc);const sink=ac.createGain();sink.gain.value=0;proc.connect(sink).connect(ac.destination);
-  sNodes=[srcNode,proc];sOn=true;sRange=[];sBinHist=[];sSlow=null;sT0=Date.now();
-  go('sGo',true,'Sonar starten','Sonar beenden');state('sState','L\u00e4uft','live');
-  sLoop();
+function sonarVitals(st){const ser=st.ser,n=ser.re.length,fsS=st.fs/st.N,dur=n/fsS;const T=st.target;
+  const out={per:null,perQ:'',hr:null,hrQ:'',reason:'',y:null,dur};
+  if(T.bin<0){out.reason='Kein bewegtes Echo über dem Rauschen.'}
+  else if(T.lost){out.reason='Ziel verloren.'}
+  else if(st.motionLevel>0.6){out.reason='Zu viel Bewegung im Raum.';}
+  else if(dur<20){out.reason='Sammle stabiles Fenster: '+Math.floor(dur)+' von 20 s'+(st.serBreak?' (zuletzt neu: '+st.serBreak+')':'')}
+  else{
+    // Statischen Anteil per Kreisanpassung (Kasa) abtrennen, dann Phase entfalten: Phase ∝ Abstandsänderung
+    const cen=circleFit(ser.re,ser.im);let y=new Array(n),prev=0,acc=0;
+    for(let i=0;i<n;i++){const ph=Math.atan2(ser.im[i]-cen.y,ser.re[i]-cen.x);if(i){let d=ph-prev;while(d>Math.PI)d-=2*Math.PI;while(d<-Math.PI)d+=2*Math.PI;acc+=d}prev=ph;y[i]=acc}
+    const dif=[];for(let i=1;i<n;i++)dif.push(Math.abs(y[i]-y[i-1]));const mad=(median(dif)||1e-12)*1.4826;const jumps=dif.filter(v=>v>Math.max(10*mad,1.2)).length;
+    out.amp_mm=(Math.max(...y)-Math.min(...y))/(4*Math.PI)*C_SOUND/((st.f0+st.f1)/2)*1000;
+    y=detrend(y);out.y=y;
+    if(jumps>Math.max(2,n*0.01)){out.reason='Sprünge im Verlauf ('+jumps+') – Fenster verworfen.';breakSeries(st,'Sprünge im Verlauf')}
+    else{const yw=hann(y);const br=dftPeak(yw,fsS,0.1,0.7,0.005);const cycles=br.f*dur;const zc=zeroCross(smooth(y,Math.round(0.5*fsS)))/2;const consistent=Math.abs(zc-cycles)<=Math.max(1,0.3*cycles);
+      if(br.prom>=2.5&&cycles>=3&&consistent){out.per=Math.round(br.f*60);out.perQ=br.prom>4?'Qualität gut':'Qualität mittel';
+        // Forschung: Atemgrund- und Oberwellen entfernen, dann 0,8–2,5 Hz
+        const r=y.slice();for(let h=1;h<=4;h++){const w=2*Math.PI*br.f*h/fsS;let A=0,B=0;for(let i=0;i<n;i++){A+=r[i]*Math.cos(w*i);B+=r[i]*Math.sin(w*i)}A*=2/n;B*=2/n;for(let i=0;i<n;i++)r[i]-=A*Math.cos(w*i)+B*Math.sin(w*i)}
+        const hr=dftPeak(hann(r),fsS,0.8,2.5,0.01,f=>{for(let h=2;h<=8;h++)if(Math.abs(f-h*br.f)<0.04)return true;return false});
+        if(hr.prom>=3.5){out.hr=Math.round(hr.f*60);out.hrQ='nicht validiert'}}
+      else out.reason='Keine stabile Periodik (Prominenz '+nf(br.prom,1)+', Zyklen '+nf(cycles,1)+').'}}
+  st.vit=out;
+  if(out.per!=null&&out.per!==st.lastPer){logEvent('Sonar','Periodische Bewegung '+out.per+'/min bei ≈ '+nf(binRange(st,T.tau),2)+' m (nicht validiert)',out.perQ);st.lastPer=out.per}
+  if(out.hr!=null&&out.hr!==st.lastHr){logEvent('Sonar','Forschung: Periodik '+out.hr+'/min im Herzband','nicht validiert');st.lastHr=out.hr}
 }
-let sProfBuf=[],sProfT=[];
-function processProfile(prof,t){
-  // Magnitude je Bin
-  const mag=new Float32Array(NB);for(let k=0;k<NB;k++)mag[k]=Math.hypot(prof.re[k],prof.im[k]);
-  // Slow-time Clutter-Removal: laufender Mittelwert je Bin abziehen (statische Echos)
-  if(!sSlow){sSlow={re:new Float32Array(NB),im:new Float32Array(NB)}}
-  const alpha=0.02;const dre=new Float32Array(NB),dim=new Float32Array(NB);
-  for(let k=0;k<NB;k++){sSlow.re[k]=(1-alpha)*sSlow.re[k]+alpha*prof.re[k];sSlow.im[k]=(1-alpha)*sSlow.im[k]+alpha*prof.im[k];dre[k]=prof.re[k]-sSlow.re[k];dim[k]=prof.im[k]-sSlow.im[k]}
-  sProfBuf.push({re:prof.re.slice(),im:prof.im.slice(),dre,dim,mag});sProfT.push(t);
-  if(sProfBuf.length>900){sProfBuf.shift();sProfT.shift()}
-}
-function sLoop(){
-  if(!sOn)return;
-  const el=(Date.now()-sT0)/1000;
-  if(sProfBuf.length<10){state('sState','Starte Sender \u2026','live');$('sStripTxt').textContent='Sammle Signal, '+Math.round(el)+' s';setTimeout(sLoop,200);return}
-  const last=sProfBuf[sProfBuf.length-1];
-  // Entfernungsprofil (geclutterte Bewegungsenergie je Bin ueber letzte ~2 s)
-  const win=Math.min(sProfBuf.length,Math.round(2* (sProfBuf.length/((sProfT[sProfT.length-1]-sProfT[0])||1)) ));
-  const moveE=new Float32Array(NB);
-  for(let i=sProfBuf.length-win;i<sProfBuf.length;i++){const p=sProfBuf[i];for(let k=0;k<NB;k++)moveE[k]+=Math.hypot(p.dre[k],p.dim[k])}
-  let mx=0,mk=2;for(let k=2;k<NB;k++){if(moveE[k]>mx){mx=moveE[k];mk=k}}
-  const C=343,B=FHI-FLO,maxR=4.0;const binR=maxR/NB;const chosen=sChosen&&sChosen<NB?sChosen:mk;
-  // Gesamtbewegung
-  let tot=0;for(let k=2;k<NB;k++)tot+=moveE[k];const mv=Math.min(1,Math.log10(1+tot*0.5)/2);
-  $('sMov').textContent=mv>0.5?'stark':mv>0.2?'leicht':'keine';bar('sMovB',mv,mv>0.5?'bad':mv>0.2?'warn':'');
-  $('sRange').textContent=(mk*binR).toFixed(2);
-  // Phasenverlauf am gewaehlten Bin (Brustwand)
-  const fs=sProfBuf.length/((sProfT[sProfT.length-1]-sProfT[0])||1);
-  const nSec=Math.min(sProfBuf.length,Math.round(30*fs));
-  const ph=[];let prev=0,acc=0;
-  for(let i=sProfBuf.length-nSec;i<sProfBuf.length;i++){const p=sProfBuf[i];const a=Math.atan2(p.dim[mk],p.dre[mk]);if(i>sProfBuf.length-nSec){let d=a-prev;while(d>Math.PI)d-=2*Math.PI;while(d<-Math.PI)d+=2*Math.PI;acc+=d}prev=a;ph.push(acc)}
-  let color=TEAL(),level=mv;
-  if(ph.length>fs*8){
-    const br=dftPeak(ph,fs,0.12,0.6);const bprom=br.amp/(br.mean+1e-12);
-    if(mv<0.5&&bprom>2.0){const bpm=Math.round(br.f*60);$('sBr').textContent=bpm;bar('sBrB',Math.min(1,bprom/6),'');setLab('sonar','Atemz\u00fcge/min');setVal('sonar',bpm);state('sState','Atmung erkannt bei '+(mk*binR).toFixed(1)+' m',"good");color=TEAL();level=Math.min(1,bprom/6);
-      if(bpm!==sLastBr){logEvent('Sonar','Atmung '+bpm+'/min bei '+(mk*binR).toFixed(1)+' m',Math.min(.9,.4+bprom/8));sLastBr=bpm}
-      // Herzschlag: Band 0.8-2.5 Hz nach Entfernen der Atemgrundwelle
-      const hr=dftPeak(ph,fs,0.8,2.5);const hprom=hr.amp/(hr.mean+1e-12);
-      if(hprom>2.6){const h=Math.round(hr.f*60);$('sHr').textContent=h;bar('sHrB',Math.min(1,hprom/6),'warn');if(h!==sLastHr){logEvent('Sonar','Herzrate '+h+'/min (experimentell)',Math.min(.75,.3+hprom/10));sLastHr=h}}
-      else{$('sHr').textContent='\u2013';bar('sHrB',0,'')}
-    }else{$('sBr').textContent='\u2013';$('sHr').textContent='\u2013';bar('sBrB',0,'');setVal('sonar','\u2013');state('sState',mv>=0.5?'Zu viel Bewegung':'Kein periodisches Signal','live');color=AMB()}
-    $('sStripTxt').textContent='Brustwand bei '+(mk*binR).toFixed(2)+' m \u00b7 Atem-Prominenz '+bprom.toFixed(1);
-    strip($('sStrip'),ph,Math.min(...ph),Math.max(...ph),color);
-  }else{$('sStripTxt').textContent='Sammle Signal, '+Math.round(ph.length/fs)+' von 30 s';if(ph.length>4)strip($('sStrip'),ph,Math.min(...ph),Math.max(...ph),AMB())}
-  // Entfernungsprofil zeichnen
-  const arr=Array.from(moveE).slice(2);strip($('sRangeCv'),arr,0,Math.max(...arr)||1,AMB());
-  scope('sonar',level,sBinHist,color,(el%3)/3);sBinHist.push(level);if(sBinHist.length>60)sBinHist.shift();
-  setTimeout(sLoop,200);
-}
-$('sGo').onclick=sStart;
-$('sRec').onclick=()=>{if(!sOn){$('sRecHint').textContent='Erst Sonar starten.';return}sRec=!sRec;if(sRec){sRecBuf=[];sRecMeta={start:new Date().toISOString(),fs:sFs,nper:sNper,flo:FLO,fhi:FHI};$('sRec').textContent='Aufzeichnung l\u00e4uft \u2013 stoppen';state('sState','Rohdaten werden aufgezeichnet','bad')}else{$('sRec').textContent='Rohdaten aufzeichnen';$('sRecHint').textContent=sRecBuf.length+' Sweeps aufgezeichnet ('+(sRecBuf.length*TSWEEP).toFixed(0)+' s). Jetzt exportieren.'}};
-$('sExp').onclick=()=>{
-  if(!sRecBuf.length){$('sRecHint').textContent='Keine Rohdaten. Erst aufzeichnen.';return}
-  // Float32 interleaved -> WAV (mono, Rohecho) + JSON-Meta
-  const total=sRecBuf.length*sNper;const pcm=new Float32Array(total);let o=0;for(const b of sRecBuf){pcm.set(b,o);o+=sNper}
-  const wav=floatToWav(pcm,sFs);const blob=new Blob([wav],{type:'audio/wav'});
-  const meta=JSON.stringify(sRecMeta,null,0);
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='lagebild-sonar-'+Date.now()+'.wav';a.click();
-  const mb=document.createElement('a');mb.href=URL.createObjectURL(new Blob([meta],{type:'application/json'}));mb.download='lagebild-sonar-meta.json';mb.click();
-  $('sRecHint').textContent='WAV und Meta exportiert \u2013 zur\u00fcckschicken f\u00fcr Kalibrierung.';
-};
-function floatToWav(samples,fs){const bytesPerSample=2,buf=new ArrayBuffer(44+samples.length*bytesPerSample),v=new DataView(buf);const ws=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i))};ws(0,'RIFF');v.setUint32(4,36+samples.length*bytesPerSample,true);ws(8,'WAVE');ws(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,fs,true);v.setUint32(28,fs*bytesPerSample,true);v.setUint16(32,bytesPerSample,true);v.setUint16(34,16,true);ws(36,'data');v.setUint32(40,samples.length*bytesPerSample,true);let o=44;for(let i=0;i<samples.length;i++){let x=Math.max(-1,Math.min(1,samples[i]));v.setInt16(o,x<0?x*0x8000:x*0x7FFF,true);o+=2}return buf}
+const binRange=(st,dt)=>dt*C_SOUND/(2*st.fs);
+function sonarRenderLoop(st){const s=st.s;if(st.cal){const T=st.target,v=st.vit;
+    $('sMov').textContent=st.motionLevel>0.6?'stark':st.motionLevel>0.25?'leicht':'keine';bar('sMovB',st.motionLevel,st.motionLevel>0.6?'bad':st.motionLevel>0.25?'warn':'');
+    if(T.bin>=0&&!T.lost){$('sRange').textContent='≈ '+nf(binRange(st,T.tau),2);$('sRangeQ').textContent=(T.auto?'automatisch':'manuell')+' · nicht validiert'}
+    else{$('sRange').textContent='–';$('sRangeQ').textContent=T.lost?'Ziel verloren':T.auto?'kein Ziel':'Ziel ungültig'}
+    let color=COL.teal,level=Math.max(st.motionLevel,st.targetAct||0);
+    if(v&&v.per!=null){$('sPer').textContent=v.per;$('sPerQ').textContent=v.perQ;setVal('sonar',v.per);setState('s','laeuft','Periodische Bewegung bei ≈ '+nf(binRange(st,T.tau),2)+' m. Nicht als Atmung validiert.')}
+    else{$('sPer').textContent='–';$('sPerQ').textContent='';setVal('sonar','–');if($('sState').dataset.key==='laeuft'||$('sState').dataset.key==='unzureichend'){const r=(v&&v.reason)||'Sammle Signal …';
+        if(st.lastInvalid&&performance.now()-st.lastBlockAt<1000&&st.ser.re.length<5&&st.serBreak===st.lastInvalid)setState('s','unzureichend',st.lastInvalid+' – Werte verworfen.');else setState('s','laeuft',r)}color=COL.amber}
+    if(v&&v.hr!=null){$('sHr').textContent=v.hr;$('sHrQ').textContent=v.hrQ}else{$('sHr').textContent='–';$('sHrQ').textContent=''}
+    if(st.motionLevel>0.6)color=COL.red;
+    scope('sonar',level,color);drawRange(st);
+    if(v&&v.y){const k=Math.round(30*st.fs/st.N);const y=v.y.slice(-k);strip($('sStrip'),y,Math.min(...y),Math.max(...y),color);$('sStripTxt').textContent='Bewegungsverlauf am Ziel, '+Math.round(y.length*st.N/st.fs)+' s'}
+    else if(st.ser.re.length>4){const y=st.ser.re.slice(-300);strip($('sStrip'),y,Math.min(...y),Math.max(...y),COL.amber);$('sStripTxt').textContent=(v&&v.reason)||'Sammle Signal …'}
+    else{clearCv('sStrip');$('sStripTxt').textContent=(v&&v.reason)||'Noch kein Ziel.'}
+    sonarDiag(st)}
+  sTimeout(s,()=>sonarRenderLoop(st),200)}
+function drawRange(st){const cv=$('sRangeCv'),c=cv.getContext('2d'),W=cv.width,H=cv.height,NB=st.NB,cal=st.cal;c.clearRect(0,0,W,H);
+  const xr=r=>r/SON_MAXR*W;const nearX=xr(cal.nearR);c.fillStyle='rgba(147,163,184,.18)';c.fillRect(0,0,nearX,H);c.fillStyle=COL.muted;c.font='22px system-ui';if(nearX>140)c.fillText('nicht erfasst',6,24);
+  c.strokeStyle=COL.line;c.lineWidth=1;c.fillStyle=COL.muted;for(let m=1;m<=4;m++){const x=xr(m);c.beginPath();c.moveTo(x,0);c.lineTo(x,H);c.stroke();c.fillText(m+' m',Math.min(W-40,x+4),H-6)}
+  const bx=b=>xr((b+0.5)*SON_BIN*C_SOUND/(2*st.fs));const nb0=Math.ceil(cal.near/SON_BIN)+1;
+  c.strokeStyle='rgba(170,196,230,.7)';c.lineWidth=2;c.beginPath();for(let b=nb0;b<NB;b++){const db=20*Math.log10(st.Sm[b]/cal.peak+1e-9);const y=H-28-Math.max(0,Math.min(1,(db+60)/60))*(H-40);b===nb0?c.moveTo(bx(b),y):c.lineTo(bx(b),y)}c.stroke();
+  c.fillStyle='rgba(255,176,32,.55)';for(let b=nb0;b<NB;b++){const db=10*Math.log10(st.E[b]/st.noise+1e-9);const h=Math.max(0,Math.min(1,db/30))*(H-40);c.fillRect(bx(b)-2,H-28-h,4,h)}
+  const T=st.target;if(T.bin>=0){const x=xr(binRange(st,T.tau));c.strokeStyle=T.lost?COL.red:COL.teal;c.lineWidth=3;c.setLineDash(T.auto?[8,6]:[]);c.beginPath();c.moveTo(x,0);c.lineTo(x,H-28);c.stroke();c.setLineDash([])}}
+$('sRangeCv').addEventListener('click',ev=>{const st=SON;if(!st||!st.cal||!S.cur||S.cur!==st.s){$('sRangeTxt').textContent='Erst Sonar starten.';return}
+  const r=$('sRangeCv').getBoundingClientRect();const range=(ev.clientX-r.left)/r.width*SON_MAXR;if(range<=st.cal.nearR){$('sRangeTxt').textContent='Dieser Bereich wird nicht erfasst.';return}
+  const dt=Math.round(range*2*st.fs/C_SOUND),b=Math.min(st.NB-1,Math.floor(dt/SON_BIN));const T=st.target;T.auto=false;T.bin=b;T.tau=Math.min(st.dmax-1,dt);T.since=performance.now();T.lost=false;T.lowSince=0;breakSeries(st,'Ziel manuell gewählt');
+  $('sRangeTxt').textContent='Ziel manuell bei ≈ '+nf(binRange(st,T.tau),2)+' m. „Ziel: automatisch“ hebt die Auswahl auf.'});
+$('sAuto').onclick=()=>{const st=SON;if(!st)return;st.target.auto=true;st.target.bin=-1;st.target.tau=-1;st.target.lost=false;breakSeries(st,'Automatische Zielwahl');$('sRangeTxt').textContent='Automatische Zielwahl: stärkstes bewegtes Echo.'};
+function sonarDiag(st){const c=st.cal;diag('sDiag',Object.assign({'Sitzung':st.s.id,'Softwarestand':VERSION,'Audio-Abtastrate':st.fs+' Hz','Chirp':nf(st.f0/1000,1)+'–'+nf(st.f1/1000,1)+' kHz, '+st.N+' Samples ('+nf(st.N/st.fs*1000,1)+' ms)','Sendepegel':nf(st.gain,2)+' (Software, Systemlautstärke unbekannt)','Audio-Session':navigator.audioSession?navigator.audioSession.type:'nicht verfügbar',
+    'Kalibrierung':c?c.id+' (nicht validiert)':'läuft','Direktpfad':c?'Verzögerung '+c.tau0+' Samples, Verhältnis '+nf(c.snr,0):'–','Nahbereich nicht erfasst':c?'bis ≈ '+nf(c.nearR,2)+' m':'–',
+    'Gültige Blöcke':st.blocks,'Verworfene Blöcke':st.invalid+(st.lastInvalid?' (zuletzt: '+st.lastInvalid+')':''),'Lücken / Übersteuerung':st.gaps+' / '+st.clips,'Bewegungssensor':st.motion?(st.motion.fresh()?'liefert Daten ('+st.motion.src+')':'keine Daten – Telefonbewegung unbekannt'):st.mstat},st.info))}
+function recordBlock(st,d){const r=st.rec;if(r.blocks.length>=r.limit){r.on=false;$('sRec').textContent='Rohdaten aufzeichnen';$('sRec').classList.remove('on');$('sRecHint').textContent='Grenze von 120 s erreicht – Aufzeichnung kontrolliert beendet. Export möglich.';return}
+  r.blocks.push({seq:d.seq,frame:d.frame,clip:d.clip,gap:d.gap,data:d.data.slice()})}
+$('sRec').onclick=()=>{const st=SON;if(!st||!S.cur||S.cur!==st.s){$('sRecHint').textContent='Erst Sonar starten.';return}
+  if(st.rec&&st.rec.on){st.rec.on=false;$('sRec').textContent='Rohdaten aufzeichnen';$('sRec').classList.remove('on');$('sRecHint').textContent=st.rec.blocks.length+' Sweeps aufgezeichnet ('+nf(st.rec.blocks.length*st.N/st.fs,0)+' s). Export möglich.';return}
+  st.rec={on:true,blocks:[],start:new Date().toISOString(),limit:Math.round(120*st.fs/st.N)};$('sRec').textContent='Aufzeichnung stoppen';$('sRec').classList.add('on');$('sRecHint').textContent='Aufzeichnung läuft. Mikrofon-Rohdaten enthalten auch Geräusche und Sprache.'};
+$('sExp').onclick=async()=>{const st=SON;if(!st||!st.rec||!st.rec.blocks.length){$('sRecHint').textContent='Keine Rohdaten vorhanden. Erst aufzeichnen.';return}
+  const B=st.rec.blocks,N=st.N,pcm=new Float32Array(B.length*N);B.forEach((b,i)=>pcm.set(b.data,i*N));
+  const meta={version:VERSION,session:st.s.id,recordingStart:st.rec.start,userAgent:navigator.userAgent,sampleRate:st.fs,sweepSamples:N,chirp:{f0:st.f0,f1:st.f1,taper:'Tukey 6 %'},gain:st.gain,calibration:st.cal,audioSettings:st.raw,motionPermission:st.mstat,
+    blocks:B.map(b=>({seq:b.seq,frame:b.frame,clip:b.clip,gap:b.gap})),note:'Jeder Block beginnt am Anfang eines gesendeten Sweeps (gleicher Samplezähler für Senden und Empfang).'};
+  const base='lagebild-sonar-'+stamp();const wav=new File([floatToWav(pcm,st.fs)],base+'.wav',{type:'audio/wav'}),js=new File([JSON.stringify(meta)],base+'.json',{type:'application/json'});
+  try{if(navigator.canShare&&navigator.canShare({files:[wav,js]})){await navigator.share({files:[wav,js]});$('sRecHint').textContent='WAV und Metadaten geteilt.';return}}catch(e){if(e.name==='AbortError'){$('sRecHint').textContent='Abgebrochen.';return}}
+  const r1=await saveFile(wav.name,wav);setTimeout(async()=>{const r2=await saveFile(js.name,js);$('sRecHint').textContent=r1+' · '+r2},800)};
 
-/* ---------- Puls ---------- */
-let pOn=false,pStream=null,pG=[],pT=[],pHist=[],pT0=0;const pCanvas=document.createElement('canvas');pCanvas.width=64;pCanvas.height=64;
-async function pStart(){
-  if(pOn){pOn=false;if(pStream)pStream.getTracks().forEach(t=>t.stop());go('pGo',false,'Kamera starten','Kamera beenden');state('pState','Beendet');return}
-  $('pErr').textContent='';
-  try{pStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:640},height:{ideal:480}},audio:false});$('pVid').srcObject=pStream;await $('pVid').play()}catch(e){$('pErr').textContent='Kamera nicht verfügbar: '+e.message;return}
-  pOn=true;pG=[];pT=[];pHist=[];pT0=performance.now();go('pGo',true,'Kamera starten','Kamera beenden');pLoop();
-}
-function pLoop(){
-  if(!pOn)return;const v=$('pVid');
-  if(v.videoWidth){const c=pCanvas.getContext('2d',{willReadFrequently:true});const sw=v.videoWidth*.4,sh=v.videoHeight*.4;c.drawImage(v,(v.videoWidth-sw)/2,(v.videoHeight-sh)/2,sw,sh,0,0,64,64);const d=c.getImageData(0,0,64,64).data;let g=0,r=0;for(let i=0;i<d.length;i+=4){r+=d[i];g+=d[i+1]}g/=d.length/4;r/=d.length/4;
-    pG.push(g);pT.push(performance.now()/1000);if(pG.length>900){pG.shift();pT.shift()}
-    const dur=pT[pT.length-1]-pT[0];$('pDur').textContent=Math.round(dur)+' s';
-    let level=0,color=AMB();
-    if(r<40)state('pState','Zu dunkel, mehr Licht','live');
-    if(pG.length>=200){const fs=pG.length/dur;const w=Math.max(3,Math.round(1.5*fs));const det=pG.map((x,i)=>{const a=Math.max(0,i-w),b=Math.min(pG.length-1,i+w);let s=0;for(let j=a;j<=b;j++)s+=pG[j];return x-s/(b-a+1)});
-      const res=dftPeak(det,fs,0.75,3.0);const prom=res.amp/(res.mean+1e-12);level=Math.min(1,(prom-1)/4);$('pQ').textContent=prom.toFixed(1);bar('pQB',level,prom>3?'':prom>2?'warn':'bad');
-      if(prom>2.2&&dur>=15){const bpm=Math.round(res.f*60);setVal('puls',bpm);state('pState','Messung gültig','good');color=TEAL();logEvent('Puls','Herzrate '+bpm+'/min (Sichtlinie)',Math.min(.9,.4+prom/10))}
-      else{setVal('puls','–');state('pState','Ruhig halten, Signal schwach','live')}
-      strip($('pStrip'),det.slice(-300),Math.min(...det.slice(-300)),Math.max(...det.slice(-300)),RED());
-    }else state('pState','Sammle Signal, '+Math.round(dur)+' von 20 s','live');
-    pHist.push(level);if(pHist.length>60)pHist.shift();scope('puls',level,pHist,color,null);
-  }
-  requestAnimationFrame(pLoop);
-}
-$('pGo').onclick=pStart;
+/* ================= Puls per Kamera ================= */
+MODES.puls={name:'Puls',ended(key,d){setState('p',key,d);$('pQ').textContent='–';$('pDur').textContent='–';bar('pQB',0);setVal('puls','–');resetScope('puls');try{$('pVid').srcObject=null}catch(e){}}};
+$('pGo').onclick=()=>{if(S.cur&&S.cur.mode==='puls'){stopSession('beendet','Kamera beendet.');return}
+  const s=newSession('puls');setState('p','berechtigung','Kamera freigeben …');
+  (async()=>{try{needSecure();const st=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:640},height:{ideal:480},frameRate:{ideal:30}},audio:false});
+    if(!s.alive){st.getTracks().forEach(t=>t.stop());throw new Stale()}st.getTracks().forEach(t=>trackGuard(s,t));
+    const v=$('pVid');v.srcObject=st;s.onStop.push(()=>{v.srcObject=null});await v.play();if(!s.alive)throw new Stale();
+    const set=st.getVideoTracks()[0].getSettings?st.getVideoTracks()[0].getSettings():{};
+    const p={t:[],g:[],b:[],r:[],prev:null,rvfc:'requestVideoFrameCallback' in HTMLVideoElement.prototype,cv:document.createElement('canvas'),lastAna:0,lastBpm:0,reason:''};p.cv.width=p.cv.height=48;
+    diag('pDiag',{'Sitzung':s.id,'Zeitquelle':p.rvfc?'Bildzeitstempel (requestVideoFrameCallback)':'Anzeigezeit (geschätzt)','Auflösung':(set.width||'?')+'×'+(set.height||'?'),'Bildrate gemeldet':set.frameRate?nf(set.frameRate,0)+' fps':'unbekannt'});
+    s.running=true;setState('p','kalibrierung','Gesicht oder Handfläche ruhig in den Rahmen halten …');
+    const step=(now,meta)=>{if(!s.alive)return;pFrame(s,p,v,meta&&meta.mediaTime!=null?meta.mediaTime:performance.now()/1000);if(p.rvfc)v.requestVideoFrameCallback(step);else requestAnimationFrame(t=>step(t))};
+    if(p.rvfc)v.requestVideoFrameCallback(step);else requestAnimationFrame(t=>step(t));
+  }catch(e){startFail(s,e)}})()};
+function pFrame(s,p,v,t){if(!v.videoWidth)return;const c=p.cv.getContext('2d',{willReadFrequently:true});const sw=v.videoWidth*0.4,sh=v.videoHeight*0.4;
+  c.drawImage(v,(v.videoWidth-sw)/2,(v.videoHeight-sh)/2,sw,sh,0,0,48,48);const d=c.getImageData(0,0,48,48).data;let r=0,g=0,b=0;const lum=new Float32Array(48*48);
+  for(let i=0,j=0;i<d.length;i+=4,j++){r+=d[i];g+=d[i+1];b+=d[i+2];lum[j]=d[i]*0.3+d[i+1]*0.59+d[i+2]*0.11}const n=d.length/4;r/=n;g/=n;b/=n;
+  let mot=0;if(p.prev){for(let j=0;j<lum.length;j++)mot+=Math.abs(lum[j]-p.prev[j]);mot/=lum.length}p.prev=lum;
+  const reset=why=>{p.t=[];p.g=[];p.b=[];p.r=[];p.reason=why};
+  const skin=r>60&&r>g&&g>b*0.9&&(r-g)/r>0.06&&(r-g)/r<0.6;
+  if(r<40&&g<40)reset('Zu dunkel – mehr Licht.');else if(!skin)reset('Keine Hautregion im Rahmen erkannt.');else if(mot>6)reset('Bewegung – Zeitfenster neu gestartet.');
+  else{p.t.push(t);p.g.push(g);p.b.push(b);p.r.push(r);while(p.t.length&&p.t[0]<t-30)(p.t.shift(),p.g.shift(),p.b.shift(),p.r.shift())}
+  const dur=p.t.length>1?p.t[p.t.length-1]-p.t[0]:0;$('pDur').textContent=Math.floor(dur);
+  if(performance.now()-p.lastAna<1000)return;p.lastAna=performance.now();let level=0,color=COL.amber;
+  if(dur<20){setVal('puls','–');$('pQ').textContent='–';bar('pQB',0);setState('p','kalibrierung',(p.reason&&!p.t.length?p.reason+' ':'')+'Sammle Signal: '+Math.floor(dur)+' von 20 s');}
+  else{const fs=30;const prep=a=>{const u=resample(p.t,a,fs);const m=smooth(u,Math.round(1.5*fs));return hann(u.map((x,i)=>(x-m[i])/(m[i]||1)))};
+    const G=prep(p.g),Bc=prep(p.b);const res=dftPeak(G,fs,0.75,3.0,0.01);const bl=dftPeak(Bc,fs,res.f-0.02,res.f+0.02,0.01);const blAll=dftPeak(Bc,fs,0.75,3.0,0.01);const bprom=blAll.mean?bl.amp/blAll.mean:0;
+    level=Math.min(1,(res.prom-1)/4);bar('pQB',level,res.prom>3.5?'':res.prom>2.5?'warn':'bad');$('pQ').textContent=res.prom>3.5?'gut':res.prom>2.5?'mittel':'schwach';
+    if(bprom>2.5&&bl.amp>0.6*res.amp){setVal('puls','–');setState('p','unzureichend','Gleiches Muster im Blaukanal – vermutlich Lichtflackern. Ungültig.')}
+    else if(res.prom>=2.5){const bpm=Math.round(res.f*60);setVal('puls',bpm);color=COL.teal;setState('p','laeuft','Messung gültig über '+Math.floor(dur)+' s. Nicht medizinisch validiert.');if(Math.abs(bpm-p.lastBpm)>=2){logEvent('Puls','Pulsrate '+bpm+'/min (Kamera)',res.prom>3.5?'gut':'mittel');p.lastBpm=bpm}}
+    else{setVal('puls','–');setState('p','unzureichend','Signal schwach – ruhig halten, Licht verbessern.')}
+    const k=G.slice(-300);strip($('pStrip'),k,Math.min(...k),Math.max(...k),COL.red)}
+  scope('puls',level,color)}
 
-/* ---------- Überflug (Doppler) ---------- */
-let fOn=false,fAn=null,fBuf=null,fTrack=[],fSpec=[],fHist=[],fT0=0,fEvent=null;const C=343;
-async function fStart(){
-  if(fOn){fOn=false;go('fGo',false,'Mithören starten','Mithören beenden');state('fState','Beendet');return}
-  $('fErr').textContent='';
-  try{const st=await getMic();const ac=ctx();const src=ac.createMediaStreamSource(st);fAn=ac.createAnalyser();fAn.fftSize=32768;fAn.smoothingTimeConstant=0.6;src.connect(fAn);fBuf=new Float32Array(fAn.frequencyBinCount)}
-  catch(e){$('fErr').textContent='Konnte nicht starten: '+e.message;return}
-  fOn=true;fTrack=[];fSpec=[];fHist=[];fT0=Date.now();fEvent=null;go('fGo',true,'Mithören starten','Mithören beenden');fLoop();
-}
-function fLoop(){
-  if(!fOn)return;
-  fAn.getFloatFrequencyData(fBuf);const binHz=48000/fAn.fftSize;// ≈1,46 Hz
-  const lo=Math.floor(40/binHz),hi=Math.floor(400/binHz);
-  // Spektrum-Spalte (log-Pegel, normiert)
-  const col=new Float32Array(hi-lo);let mx=-200,mn=0,bi=-1;
-  for(let i=lo;i<hi;i++){col[i-lo]=fBuf[i];if(fBuf[i]>mx){mx=fBuf[i]}}
-  // stärkster Ton 60–300 Hz, interpoliert
-  const l2=Math.floor(60/binHz),h2=Math.floor(300/binHz);let pk=-200;for(let i=l2;i<h2;i++){if(fBuf[i]>pk){pk=fBuf[i];bi=i}}
-  let fpk=bi*binHz;if(bi>0&&bi<fBuf.length-1){const a=fBuf[bi-1],b=fBuf[bi],c=fBuf[bi+1];const p=0.5*(a-c)/(a-2*b+c);if(isFinite(p))fpk=(bi+p)*binHz}
-  // Prominenz des Tons gegenüber dem Mittel des Bandes
-  let avg=0;for(let i=l2;i<h2;i++)avg+=Math.pow(10,fBuf[i]/10);avg=10*Math.log10(avg/(h2-l2)+1e-12);const prom=pk-avg;
-  const now=(Date.now()-fT0)/1000;
-  fSpec.push(col);if(fSpec.length>300)fSpec.shift();
-  const tonal=prom>12;setVal('flug',tonal?fpk.toFixed(1):'–');
-  fTrack.push({t:now,f:tonal?fpk:null,p:prom});if(fTrack.length>600)fTrack.shift();
-  // Ereignis: zusammenhängende tonale Spur ≥ 15 s
-  const run=[];for(let i=fTrack.length-1;i>=0&&fTrack[i].f!=null;i--)run.unshift(fTrack[i]);
-  let level=Math.min(1,Math.max(0,(prom-6)/20)),color=TEAL();
-  if(run.length>0&&run[run.length-1].t-run[0].t>=15){
-    const fs=run.slice(0,Math.max(3,Math.floor(run.length*0.15))).map(r=>r.f),fe=run.slice(-Math.max(3,Math.floor(run.length*0.15))).map(r=>r.f);
-    const med=a=>{const s=a.slice().sort((x,y)=>x-y);return s[Math.floor(s.length/2)]};const fhi=med(fs),flo=med(fe);
-    if(fhi>flo*1.03){const v=C*(fhi-flo)/(fhi+flo),f0=2*fhi*flo/(fhi+flo);
-      // CPA: Zeitpunkt, an dem die Spur f0 kreuzt; Steigung dort
-      let ci=run.findIndex(r=>r.f<=f0);if(ci<2)ci=Math.floor(run.length/2);const a=run[Math.max(0,ci-3)],b=run[Math.min(run.length-1,ci+3)];const slope=Math.abs((b.f-a.f)/((b.t-a.t)||1));
-      const d=slope>0?f0*v*v/(C*slope):NaN;
-      $('fV').textContent=v.toFixed(0);$('fD').textContent=isFinite(d)?Math.round(d):'–';state('fState','Überflug, Doppler-Kurve läuft','live');color=AMB();
-      fEvent={v,d,f0,cpa:new Date(fT0+run[ci].t*1000)};
-    }else{state('fState','Dauerton, noch kein Abfall','live');color=AMB()}
-  }else if(tonal){state('fState','Tonales Signal '+fpk.toFixed(0)+' Hz','live');color=AMB()}
-  else{state('fState',fEvent?'Überflug erfasst':'Höre zu','good');
-    if(fEvent){logEvent('Überflug','CPA '+fmt(fEvent.cpa)+' Uhr, '+fEvent.v.toFixed(0)+' m/s, Abstand ≈ '+(isFinite(fEvent.d)?Math.round(fEvent.d):'?')+' m, f0 '+fEvent.f0.toFixed(1)+' Hz',.6);fEvent=null;$('fV').textContent='–';$('fD').textContent='–'}}
-  fHist.push(level);if(fHist.length>60)fHist.shift();scope('flug',level,fHist,color,(now%6)/6);
-  // Spektrogramm zeichnen
-  const cv=$('fStrip'),c=cv.getContext('2d'),W=cv.width,H=cv.height;c.fillStyle=css('--bg');c.fillRect(0,0,W,H);const nc=fSpec.length,cw=Math.max(1,W/300);
-  for(let x=0;x<nc;x++){const sp=fSpec[x];let mxv=-200,mnv=0;for(let i=0;i<sp.length;i++){if(sp[i]>mxv)mxv=sp[i];if(sp[i]<mnv)mnv=sp[i]}
-    for(let y=0;y<sp.length;y++){const v=(sp[y]-mnv)/((mxv-mnv)||1);if(v<0.5)continue;const yy=H-(y/sp.length)*H;const t=(v-0.5)/0.5;c.fillStyle=t<0.7?'rgba(255,176,32,'+(t/0.7).toFixed(2)+')':'rgba(255,'+Math.round(176+79*(t-0.7)/0.3)+','+Math.round(32+223*(t-0.7)/0.3)+',1)';c.fillRect(x*cw,yy-2,cw,2)}}
-  setTimeout(fLoop,300);
-}
-$('fGo').onclick=fStart;
+/* ================= Überflug ================= */
+MODES.flug={name:'Überflug',ended(key,d){setState('f',key,d);$('fDrop').textContent='–';$('fCpa').textContent='–';setVal('flug','–');resetScope('flug')}};
+$('fGo').onclick=()=>{if(S.cur&&S.cur.mode==='flug'){stopSession('beendet','Mithören beendet.');return}
+  const s=newSession('flug');setState('f','berechtigung','Mikrofon freigeben …');let ctx;try{needSecure();setAudioSession();ctx=newCtx(s)}catch(e){startFail(s,e);return}
+  (async()=>{try{const mic=await getMic(s);const src=ctx.createMediaStreamSource(mic.st),an=ctx.createAnalyser();an.fftSize=32768;an.smoothingTimeConstant=0.6;src.connect(an);s.nodes.push(src,an);
+    const f={an,buf:new Float32Array(an.frequencyBinCount),fs:ctx.sampleRate,track:[],spec:[],t0:performance.now(),ev:null};
+    diag('fDiag',Object.assign({'Sitzung':s.id,'Audio-Abtastrate':ctx.sampleRate+' Hz','Frequenzauflösung':nf(ctx.sampleRate/32768,2)+' Hz'},mic.info));
+    s.running=true;setState('f','laeuft','Höre zu …');fLoop(s,f)}catch(e){startFail(s,e)}})()};
+function fLoop(s,f){f.an.getFloatFrequencyData(f.buf);const binHz=f.fs/f.an.fftSize,B=f.buf;
+  const lo=Math.floor(40/binHz),hi=Math.floor(400/binHz),l2=Math.floor(60/binHz),h2=Math.floor(300/binHz);
+  const col=B.slice(lo,hi);let pk=-300,bi=-1;for(let i=l2;i<h2;i++)if(B[i]>pk){pk=B[i];bi=i}
+  let fpk=bi*binHz;if(bi>0&&bi<B.length-1){const a=B[bi-1],b=B[bi],c=B[bi+1];const q=0.5*(a-c)/(a-2*b+c);if(isFinite(q))fpk=(bi+q)*binHz}
+  let avg=0;for(let i=l2;i<h2;i++)avg+=Math.pow(10,B[i]/10);avg=10*Math.log10(avg/(h2-l2)+1e-12);const prom=pk-avg;const now=(performance.now()-f.t0)/1000;
+  f.spec.push(col);if(f.spec.length>300)f.spec.shift();
+  const tonal=prom>12;setVal('flug',tonal?nf(fpk,1):'–');setLab('flug','Hz, stärkster Ton 60–300 Hz');
+  const prev=f.track.length?f.track[f.track.length-1]:null;
+  if(tonal&&prev&&prev.f!=null&&Math.abs(fpk-prev.f)/prev.f>0.04)f.track.push({t:now,f:null,p:0});// Sprung: Spur trennen
+  f.track.push({t:now,f:tonal?fpk:null,p:prom});if(f.track.length>600)f.track.shift();
+  const run=[];for(let i=f.track.length-1;i>=0&&f.track[i].f!=null;i--)run.unshift(f.track[i]);
+  let level=Math.min(1,Math.max(0,(prom-6)/20)),color=COL.teal;
+  if(run.length&&run[run.length-1].t-run[0].t>=15){const m=Math.max(3,Math.floor(run.length*0.15));const fhi=median(run.slice(0,m).map(r=>r.f)),flo=median(run.slice(-m).map(r=>r.f));
+    if(fhi>flo*1.03){const f0=2*fhi*flo/(fhi+flo);let ci=run.findIndex(r=>r.f<=f0);if(ci<0)ci=Math.floor(run.length/2);const drop=(fhi-flo)/fhi*100;
+      $('fDrop').textContent='−'+nf(drop,1)+' %';const cpa=new Date(Date.now()-(now-run[ci].t)*1000);$('fCpa').textContent=fmt(cpa);
+      setState('f','laeuft','Tonale Spur mit Frequenzabfall '+nf(fhi,0)+' → '+nf(flo,0)+' Hz');color=COL.amber;f.ev={fhi,flo,drop,cpa}}
+    else{setState('f','laeuft','Gleichbleibender Ton, kein Abfall');color=COL.amber}}
+  else if(tonal){setState('f','laeuft','Tonales Signal '+nf(fpk,0)+' Hz');color=COL.amber}
+  else{setState('f','laeuft',f.ev?'Spur beendet':'Höre zu …');if(f.ev){logEvent('Überflug','Tonale Spur '+nf(f.ev.fhi,0)+' → '+nf(f.ev.flo,0)+' Hz (−'+nf(f.ev.drop,1)+' %), Mittendurchgang '+fmt(f.ev.cpa),'Modell nicht validiert');f.ev=null}}
+  scope('flug',level,color);
+  const cv=$('fStrip'),c=cv.getContext('2d'),W=cv.width,H=cv.height;c.fillStyle='#070C16';c.fillRect(0,0,W,H);const cw=Math.max(1,W/300);
+  for(let x=0;x<f.spec.length;x++){const sp=f.spec[x];let mx=-300,mn=0;for(let i=0;i<sp.length;i++){if(sp[i]>mx)mx=sp[i];if(sp[i]<mn)mn=sp[i]}
+    for(let y=0;y<sp.length;y++){const v=(sp[y]-mn)/((mx-mn)||1);if(v<0.5)continue;const t=(v-0.5)/0.5;c.fillStyle=t<0.7?'rgba(255,176,32,'+(t/0.7).toFixed(2)+')':'rgb(255,'+Math.round(176+79*(t-0.7)/0.3)+','+Math.round(32+223*(t-0.7)/0.3)+')';c.fillRect(x*cw,H-(y/sp.length)*H-2,cw,2)}}
+  sTimeout(s,()=>fLoop(s,f),300)}
+
+/* ================= Navigation ================= */
+document.querySelectorAll('nav button').forEach(b=>b.addEventListener('click',()=>{const t=b.dataset.t;
+  if(S.cur&&t!=='log'&&t!==S.cur.mode)stopSession('beendet','Modus gewechselt – Sitzung vollständig beendet.');
+  document.querySelectorAll('nav button').forEach(x=>{x.classList.remove('on');x.removeAttribute('aria-current')});document.querySelectorAll('section').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');b.setAttribute('aria-current','page');$(t).classList.add('on');$('sub').textContent=b.dataset.n;showMode(t)}));
+
+/* ================= Gerätecheck allgemein ================= */
+diag('gDiag',{'Softwarestand':VERSION,'Sicherer Kontext (HTTPS)':window.isSecureContext?'ja':'nein','getUserMedia':navigator.mediaDevices&&navigator.mediaDevices.getUserMedia?'verfügbar':'fehlt','Web Audio':(window.AudioContext||window.webkitAudioContext)?'verfügbar':'fehlt',
+  'AudioWorklet':typeof AudioWorkletNode!=='undefined'?'verfügbar':'fehlt','Bewegungssensor':typeof DeviceMotionEvent!=='undefined'?(typeof DeviceMotionEvent.requestPermission==='function'?'verfügbar, Freigabe nötig':'verfügbar'):'fehlt',
+  'Audio-Session-API':navigator.audioSession?'verfügbar':'fehlt','Bildzeitstempel':'requestVideoFrameCallback' in HTMLVideoElement.prototype?'verfügbar':'fehlt','IndexedDB':window.indexedDB?'verfügbar':'fehlt','Teilen':navigator.share?'verfügbar':'fehlt','Browser':navigator.userAgent});
+['k','s','p','f'].forEach(p=>setState(p,'bereit',''));showMode('kontakt');
+window.__LB.S=S;window.__LB.stop=()=>stopSession('beendet','Test');
 })();
 </script>
 </body>
