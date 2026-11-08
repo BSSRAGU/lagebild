@@ -109,14 +109,21 @@ nav button:focus-visible{outline:2px solid var(--blue)}
 
 <section id="sonar">
   <div class="state" id="sState">Bereit</div>
-  <p class="lead">19 kHz, unhörbar. Bewegung bis etwa 4 m, Atmung bei ruhiger Person 1–2 m frontal. Lautstärke voll, Stummschalter aus.</p>
+  <p class="lead">FMCW-Ultraschall 17,5–22 kHz, unhörbar. Misst Reflexionen nach Entfernung getrennt, erkennt Atmung (und bei guter Lage die Herzrate) der nächsten ruhigen Person. Lautstärke voll, Stummschalter aus.</p>
   <button class="go" id="sGo">Sonar starten</button>
   <div class="err" id="sErr"></div>
   <div class="read">
-    <div><b id="sMov">–</b><span>Bewegung</span><div class="bar" id="sMovB"><i></i></div></div>
-    <div><b id="sCar">–</b><span>Trägerpegel, dB</span></div>
+    <div><b id="sBr">–</b><span>Atmung, Atemzüge/min</span><div class="bar" id="sBrB"><i></i></div></div>
+    <div><b id="sHr">–</b><span>Herzrate, Schläge/min (experimentell)</span><div class="bar" id="sHrB"><i></i></div></div>
   </div>
-  <div class="strip"><canvas id="sStrip" width="700" height="220"></canvas><p id="sStripTxt">Echo-Phase der letzten 25 Sekunden</p></div>
+  <div class="read">
+    <div><b id="sRange">–</b><span>Entfernung der stärksten Person, m</span></div>
+    <div><b id="sMov">–</b><span>Bewegung gesamt</span><div class="bar" id="sMovB"><i></i></div></div>
+  </div>
+  <div class="strip"><canvas id="sRangeCv" width="700" height="220"></canvas><p id="sStripTxt">Entfernungsprofil: Reflexionsstärke je 0–4 m</p></div>
+  <div class="strip"><canvas id="sStrip" width="700" height="220"></canvas><p>Brustwand-Bewegung der gewählten Entfernung</p></div>
+  <div class="row" style="margin-top:12px"><button class="sec" id="sRec">Rohdaten aufzeichnen</button><button class="sec" id="sExp">Export</button></div>
+  <div class="hint" id="sRecHint">Zeichne 30–60 s auf, miss parallel eine Referenz (Atemzählen, Pulsuhr) und schicke die Datei zurück – daraus kalibriere ich die Schwellen auf dein Gerät.</div>
 </section>
 
 <section id="puls">
@@ -317,43 +324,122 @@ function kLoop(){
 }
 $('kGo').onclick=kStart;
 
-/* ---------- Sonar ---------- */
-let sOn=false,sOsc=null,sProc=null,sAn=null,sBuf=null,sI=[],sQ=[],sAmp=[],sT=[],sHist=[],sLastBr=0,sT0=0;const F0=19000;
+/* ---------- Sonar: FMCW ---------- */
+/* FMCW-Chirp 17.5-22 kHz, Sweep 40 ms. Dechirp per Multiplikation mit synchroner
+   Referenz, FFT -> Beat-Frequenz = Entfernung. Pro Range-Bin Phase ueber Zeit ->
+   Atmung (0.12-0.6 Hz) und Herzschlag (0.8-2.5 Hz). Slow-time Clutter-Removal. */
+let sOn=false,sNodes=[],sRec=false,sRecBuf=[],sRecMeta=null;
+const FLO=17500,FHI=22000,TSWEEP=0.040; // 40 ms
+let sFs=48000,sNper=0,sRef=null,sRefMix=null,sRange=[],sBinHist=[],sSlow=null,sT0=0,sLastBr=0,sLastHr=0,sChosen=12;
+function buildRef(){
+  sNper=Math.round(TSWEEP*sFs);
+  sRefMix={cos:new Float32Array(sNper),sin:new Float32Array(sNper)};
+  for(let n=0;n<sNper;n++){const f=FLO+(FHI-FLO)*(n/sNper);const ph=2*Math.PI*(FLO*n/sFs+0.5*(FHI-FLO)/sFs*n*n/sNper);sRefMix.cos[n]=Math.cos(ph);sRefMix.sin[n]=Math.sin(ph)}
+  sRef=new Float32Array(sNper);for(let n=0;n<sNper;n++){const ph=2*Math.PI*(FLO*n/sFs+0.5*(FHI-FLO)/sFs*n*n/sNper);sRef[n]=Math.sin(ph)*(0.5-0.5*Math.cos(2*Math.PI*n/sNper))}
+}
+// einfache DFT auf Beat-Band (0..~? Hz). Range-Aufloesung c/(2*B). B=4500 Hz -> ~3.8 cm/bin bei passender Beat-Skalierung.
+const NB=64; // 64 Range-Bins
+function dechirp(block){ // block length sNper -> complex range profile (NB bins)
+  // mix
+  const I=new Float32Array(sNper),Q=new Float32Array(sNper);
+  for(let n=0;n<sNper;n++){I[n]=block[n]*sRefMix.cos[n];Q[n]=block[n]*sRefMix.sin[n]}
+  // beat-DFT: max beat freq entspricht max range ~4 m
+  const C=343, B=FHI-FLO, maxR=4.0, fbMax=2*maxR*B/(C*TSWEEP);
+  const re=new Float32Array(NB),im=new Float32Array(NB);
+  for(let k=0;k<NB;k++){const fb=fbMax*k/NB;let rr=0,ii=0;for(let n=0;n<sNper;n++){const ph=2*Math.PI*fb*n/sFs;rr+=I[n]*Math.cos(ph)+Q[n]*Math.sin(ph);ii+=Q[n]*Math.cos(ph)-I[n]*Math.sin(ph)}re[k]=rr/sNper;im[k]=ii/sNper}
+  return{re,im};
+}
 async function sStart(){
-  if(sOn){sOn=false;try{sOsc.stop()}catch(e){}if(sProc)sProc.disconnect();go('sGo',false,'Sonar starten','Sonar beenden');state('sState','Beendet');return}
+  if(sOn){sOn=false;sNodes.forEach(n=>{try{n.stop&&n.stop()}catch(e){}try{n.disconnect()}catch(e){}});sNodes=[];go('sGo',false,'Sonar starten','Sonar beenden');state('sState','Beendet');return}
   $('sErr').textContent='';
-  try{const st=await getMic();const ac=ctx();const src=ac.createMediaStreamSource(st);
-    sAn=ac.createAnalyser();sAn.fftSize=8192;sAn.smoothingTimeConstant=0.5;src.connect(sAn);sBuf=new Float32Array(sAn.frequencyBinCount);
-    sOsc=ac.createOscillator();sOsc.type='sine';sOsc.frequency.value=F0;const g=ac.createGain();g.gain.value=0.9;sOsc.connect(g).connect(ac.destination);sOsc.start();
-    sProc=ac.createScriptProcessor(4096,1,1);let phase=0;const dph=2*Math.PI*F0/ac.sampleRate;
-    sProc.onaudioprocess=ev=>{const x=ev.inputBuffer.getChannelData(0);let I=0,Q=0;for(let i=0;i<x.length;i++){I+=x[i]*Math.cos(phase);Q+=x[i]*Math.sin(phase);phase+=dph;if(phase>2*Math.PI)phase-=2*Math.PI}I/=x.length;Q/=x.length;sI.push(I);sQ.push(Q);sAmp.push(Math.hypot(I,Q));sT.push(ac.currentTime);if(sAmp.length>400){sI.shift();sQ.shift();sAmp.shift();sT.shift()}};
-    src.connect(sProc);const sink=ac.createGain();sink.gain.value=0;sProc.connect(sink).connect(ac.destination);
-  }catch(e){$('sErr').textContent='Konnte nicht starten: '+e.message;return}
-  sOn=true;sI=[];sQ=[];sAmp=[];sT=[];sHist=[];sT0=Date.now();go('sGo',true,'Sonar starten','Sonar beenden');sLoop();
+  let ac,st;
+  try{st=await getMic();ac=ctx();sFs=ac.sampleRate||48000;buildRef();}
+  catch(e){$('sErr').textContent='Mikrofon nicht verf\u00fcgbar: '+e.message+'. Direkt in Safari \u00fcber HTTPS \u00f6ffnen.';return}
+  // Sender: periodischer Chirp via BufferSource (loop)
+  const buf=ac.createBuffer(1,sNper,sFs);buf.copyToChannel(sRef,0);
+  const srcNode=ac.createBufferSource();srcNode.buffer=buf;srcNode.loop=true;const g=ac.createGain();g.gain.value=0.9;srcNode.connect(g).connect(ac.destination);srcNode.start();
+  // Empfang
+  const mic=ac.createMediaStreamSource(st);
+  const proc=ac.createScriptProcessor(Math.max(2048,1<<Math.ceil(Math.log2(sNper))),1,1);
+  let carry=new Float32Array(0);
+  proc.onaudioprocess=ev=>{
+    const x=ev.inputBuffer.getChannelData(0);
+    let cat=new Float32Array(carry.length+x.length);cat.set(carry);cat.set(x,carry.length);
+    let off=0;
+    while(cat.length-off>=sNper){
+      const block=cat.subarray(off,off+sNper);off+=sNper;
+      if(sRec){const c=new Float32Array(sNper);c.set(block);sRecBuf.push(c)}
+      const prof=dechirp(block);processProfile(prof,ac.currentTime);
+    }
+    carry=cat.slice(off);
+  };
+  mic.connect(proc);const sink=ac.createGain();sink.gain.value=0;proc.connect(sink).connect(ac.destination);
+  sNodes=[srcNode,proc];sOn=true;sRange=[];sBinHist=[];sSlow=null;sT0=Date.now();
+  go('sGo',true,'Sonar starten','Sonar beenden');state('sState','L\u00e4uft','live');
+  sLoop();
+}
+let sProfBuf=[],sProfT=[];
+function processProfile(prof,t){
+  // Magnitude je Bin
+  const mag=new Float32Array(NB);for(let k=0;k<NB;k++)mag[k]=Math.hypot(prof.re[k],prof.im[k]);
+  // Slow-time Clutter-Removal: laufender Mittelwert je Bin abziehen (statische Echos)
+  if(!sSlow){sSlow={re:new Float32Array(NB),im:new Float32Array(NB)}}
+  const alpha=0.02;const dre=new Float32Array(NB),dim=new Float32Array(NB);
+  for(let k=0;k<NB;k++){sSlow.re[k]=(1-alpha)*sSlow.re[k]+alpha*prof.re[k];sSlow.im[k]=(1-alpha)*sSlow.im[k]+alpha*prof.im[k];dre[k]=prof.re[k]-sSlow.re[k];dim[k]=prof.im[k]-sSlow.im[k]}
+  sProfBuf.push({re:prof.re.slice(),im:prof.im.slice(),dre,dim,mag});sProfT.push(t);
+  if(sProfBuf.length>900){sProfBuf.shift();sProfT.shift()}
 }
 function sLoop(){
   if(!sOn)return;
-  sAn.getFloatFrequencyData(sBuf);const binHz=48000/sAn.fftSize,cb=Math.round(F0/binHz),lin=i=>Math.pow(10,sBuf[i]/10);
-  const car=lin(cb-1)+lin(cb)+lin(cb+1);let sb=0;for(let k=4;k<=40;k++)sb+=lin(cb-k)+lin(cb+k);const ratio=sb/(car+1e-12);
-  const cdb=10*Math.log10(car+1e-12);$('sCar').textContent=cdb.toFixed(0);
-  const mv=Math.min(1,Math.log10(1+ratio*50)/2);$('sMov').textContent=ratio>0.08?'stark':ratio>0.025?'leicht':'keine';bar('sMovB',mv,ratio>0.08?'bad':ratio>0.025?'warn':'');
-  let color=TEAL(),level=mv;
-  if(cdb<-75){state('sState','Kein Trägersignal – Lautstärke prüfen','live');color=AMB()}
-  else if(ratio>0.08){state('sState','Bewegung im Raum','bad');color=RED();logEvent('Sonar','Bewegung im Raum',Math.min(.95,.5+ratio))}
-  else if(ratio>0.025){state('sState','Leichte Bewegung','live');color=AMB()}
-  else state('sState','Ruhig','good');
   const el=(Date.now()-sT0)/1000;
-  if(sAmp.length>=250){const dur=sT[sT.length-1]-sT[0],fs=sAmp.length/dur,n=Math.min(sAmp.length,Math.round(25*fs));
-    const ampS=sAmp.slice(-n);const ph=[];let prev=0,acc=0;for(let i=sAmp.length-n;i<sAmp.length;i++){const p=Math.atan2(sQ[i],sI[i]);if(i>sAmp.length-n){let d=p-prev;while(d>Math.PI)d-=2*Math.PI;while(d<-Math.PI)d+=2*Math.PI;acc+=d}prev=p;ph.push(acc)}
-    const r1=dftPeak(ampS,fs,0.12,0.6),r2=dftPeak(ph,fs,0.12,0.6);const pick=(r1.amp/(r1.mean+1e-12))>(r2.amp/(r2.mean+1e-12))?r1:r2;const prom=pick.amp/(pick.mean+1e-12);
-    if(ratio<0.04&&prom>2.2){const bpm=Math.round(pick.f*60);setVal('sonar',bpm);$('sStripTxt').textContent='Atmung erkannt, Prominenz '+prom.toFixed(1);if(bpm!==sLastBr){logEvent('Sonar','Atmung '+bpm+'/min',Math.min(.9,.4+prom/8));sLastBr=bpm}}
-    else{setVal('sonar','–');$('sStripTxt').textContent=(ratio>=0.04?'Zu viel Bewegung für Atmung':'Kein periodisches Signal')+', Prominenz '+prom.toFixed(1)}
-    strip($('sStrip'),ph,Math.min(...ph),Math.max(...ph),TEAL());
-  }else{$('sStripTxt').textContent='Sammle Signal, '+Math.min(25,Math.round(el))+' von 25 s';if(sAmp.length>5)strip($('sStrip'),sAmp,0,Math.max(...sAmp),AMB())}
-  sHist.push(level);if(sHist.length>60)sHist.shift();scope('sonar',level,sHist,color,(el%3)/3);
-  setTimeout(sLoop,150);
+  if(sProfBuf.length<10){state('sState','Starte Sender \u2026','live');$('sStripTxt').textContent='Sammle Signal, '+Math.round(el)+' s';setTimeout(sLoop,200);return}
+  const last=sProfBuf[sProfBuf.length-1];
+  // Entfernungsprofil (geclutterte Bewegungsenergie je Bin ueber letzte ~2 s)
+  const win=Math.min(sProfBuf.length,Math.round(2* (sProfBuf.length/((sProfT[sProfT.length-1]-sProfT[0])||1)) ));
+  const moveE=new Float32Array(NB);
+  for(let i=sProfBuf.length-win;i<sProfBuf.length;i++){const p=sProfBuf[i];for(let k=0;k<NB;k++)moveE[k]+=Math.hypot(p.dre[k],p.dim[k])}
+  let mx=0,mk=2;for(let k=2;k<NB;k++){if(moveE[k]>mx){mx=moveE[k];mk=k}}
+  const C=343,B=FHI-FLO,maxR=4.0;const binR=maxR/NB;const chosen=sChosen&&sChosen<NB?sChosen:mk;
+  // Gesamtbewegung
+  let tot=0;for(let k=2;k<NB;k++)tot+=moveE[k];const mv=Math.min(1,Math.log10(1+tot*0.5)/2);
+  $('sMov').textContent=mv>0.5?'stark':mv>0.2?'leicht':'keine';bar('sMovB',mv,mv>0.5?'bad':mv>0.2?'warn':'');
+  $('sRange').textContent=(mk*binR).toFixed(2);
+  // Phasenverlauf am gewaehlten Bin (Brustwand)
+  const fs=sProfBuf.length/((sProfT[sProfT.length-1]-sProfT[0])||1);
+  const nSec=Math.min(sProfBuf.length,Math.round(30*fs));
+  const ph=[];let prev=0,acc=0;
+  for(let i=sProfBuf.length-nSec;i<sProfBuf.length;i++){const p=sProfBuf[i];const a=Math.atan2(p.dim[mk],p.dre[mk]);if(i>sProfBuf.length-nSec){let d=a-prev;while(d>Math.PI)d-=2*Math.PI;while(d<-Math.PI)d+=2*Math.PI;acc+=d}prev=a;ph.push(acc)}
+  let color=TEAL(),level=mv;
+  if(ph.length>fs*8){
+    const br=dftPeak(ph,fs,0.12,0.6);const bprom=br.amp/(br.mean+1e-12);
+    if(mv<0.5&&bprom>2.0){const bpm=Math.round(br.f*60);$('sBr').textContent=bpm;bar('sBrB',Math.min(1,bprom/6),'');setLab('sonar','Atemz\u00fcge/min');setVal('sonar',bpm);state('sState','Atmung erkannt bei '+(mk*binR).toFixed(1)+' m',"good");color=TEAL();level=Math.min(1,bprom/6);
+      if(bpm!==sLastBr){logEvent('Sonar','Atmung '+bpm+'/min bei '+(mk*binR).toFixed(1)+' m',Math.min(.9,.4+bprom/8));sLastBr=bpm}
+      // Herzschlag: Band 0.8-2.5 Hz nach Entfernen der Atemgrundwelle
+      const hr=dftPeak(ph,fs,0.8,2.5);const hprom=hr.amp/(hr.mean+1e-12);
+      if(hprom>2.6){const h=Math.round(hr.f*60);$('sHr').textContent=h;bar('sHrB',Math.min(1,hprom/6),'warn');if(h!==sLastHr){logEvent('Sonar','Herzrate '+h+'/min (experimentell)',Math.min(.75,.3+hprom/10));sLastHr=h}}
+      else{$('sHr').textContent='\u2013';bar('sHrB',0,'')}
+    }else{$('sBr').textContent='\u2013';$('sHr').textContent='\u2013';bar('sBrB',0,'');setVal('sonar','\u2013');state('sState',mv>=0.5?'Zu viel Bewegung':'Kein periodisches Signal','live');color=AMB()}
+    $('sStripTxt').textContent='Brustwand bei '+(mk*binR).toFixed(2)+' m \u00b7 Atem-Prominenz '+bprom.toFixed(1);
+    strip($('sStrip'),ph,Math.min(...ph),Math.max(...ph),color);
+  }else{$('sStripTxt').textContent='Sammle Signal, '+Math.round(ph.length/fs)+' von 30 s';if(ph.length>4)strip($('sStrip'),ph,Math.min(...ph),Math.max(...ph),AMB())}
+  // Entfernungsprofil zeichnen
+  const arr=Array.from(moveE).slice(2);strip($('sRangeCv'),arr,0,Math.max(...arr)||1,AMB());
+  scope('sonar',level,sBinHist,color,(el%3)/3);sBinHist.push(level);if(sBinHist.length>60)sBinHist.shift();
+  setTimeout(sLoop,200);
 }
 $('sGo').onclick=sStart;
+$('sRec').onclick=()=>{if(!sOn){$('sRecHint').textContent='Erst Sonar starten.';return}sRec=!sRec;if(sRec){sRecBuf=[];sRecMeta={start:new Date().toISOString(),fs:sFs,nper:sNper,flo:FLO,fhi:FHI};$('sRec').textContent='Aufzeichnung l\u00e4uft \u2013 stoppen';state('sState','Rohdaten werden aufgezeichnet','bad')}else{$('sRec').textContent='Rohdaten aufzeichnen';$('sRecHint').textContent=sRecBuf.length+' Sweeps aufgezeichnet ('+(sRecBuf.length*TSWEEP).toFixed(0)+' s). Jetzt exportieren.'}};
+$('sExp').onclick=()=>{
+  if(!sRecBuf.length){$('sRecHint').textContent='Keine Rohdaten. Erst aufzeichnen.';return}
+  // Float32 interleaved -> WAV (mono, Rohecho) + JSON-Meta
+  const total=sRecBuf.length*sNper;const pcm=new Float32Array(total);let o=0;for(const b of sRecBuf){pcm.set(b,o);o+=sNper}
+  const wav=floatToWav(pcm,sFs);const blob=new Blob([wav],{type:'audio/wav'});
+  const meta=JSON.stringify(sRecMeta,null,0);
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='lagebild-sonar-'+Date.now()+'.wav';a.click();
+  const mb=document.createElement('a');mb.href=URL.createObjectURL(new Blob([meta],{type:'application/json'}));mb.download='lagebild-sonar-meta.json';mb.click();
+  $('sRecHint').textContent='WAV und Meta exportiert \u2013 zur\u00fcckschicken f\u00fcr Kalibrierung.';
+};
+function floatToWav(samples,fs){const bytesPerSample=2,buf=new ArrayBuffer(44+samples.length*bytesPerSample),v=new DataView(buf);const ws=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i))};ws(0,'RIFF');v.setUint32(4,36+samples.length*bytesPerSample,true);ws(8,'WAVE');ws(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,fs,true);v.setUint32(28,fs*bytesPerSample,true);v.setUint16(32,bytesPerSample,true);v.setUint16(34,16,true);ws(36,'data');v.setUint32(40,samples.length*bytesPerSample,true);let o=44;for(let i=0;i<samples.length;i++){let x=Math.max(-1,Math.min(1,samples[i]));v.setInt16(o,x<0?x*0x8000:x*0x7FFF,true);o+=2}return buf}
 
 /* ---------- Puls ---------- */
 let pOn=false,pStream=null,pG=[],pT=[],pHist=[],pT0=0;const pCanvas=document.createElement('canvas');pCanvas.width=64;pCanvas.height=64;
