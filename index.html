@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Lagebild Lite</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#070C16;--bg2:#0B1322;--surface:rgba(24,36,54,.72);--surface2:rgba(33,48,70,.8);--line:rgba(120,150,190,.22);
+  --text:#F3EFE7;--muted:#93A3B8;--amber:#FFB020;--teal:#35E0C8;--red:#FF5A5F;--blue:#5B98FF;
+  --fd:"Barlow Semi Condensed","Barlow",system-ui,sans-serif;--fb:"Barlow",-apple-system,system-ui,sans-serif;
+  box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:dark;
+}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){--bg:#070C16;--bg2:#0B1322;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#070C16;--bg2:#0B1322}
+html{height:100%;scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;height:100%;color:var(--text);font-family:var(--fb);font-size:17px;line-height:1.35;display:flex;flex-direction:column;-webkit-text-size-adjust:100%;
+  background:radial-gradient(120% 70% at 50% 0%,#132240 0%,#0A1120 45%,#070C16 100%)}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);background:#0A1120;z-index:10}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:linear-gradient(rgba(120,150,190,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(120,150,190,.07) 1px,transparent 1px);background-size:28px 28px;
+  -webkit-mask-image:radial-gradient(80% 60% at 50% 30%,#000 30%,transparent 100%);mask-image:radial-gradient(80% 60% at 50% 30%,#000 30%,transparent 100%)}
+#bg3d{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none}
+body::after{z-index:0}
+.top,main,nav,#boot{position:relative;z-index:1}
+.top h1{background:linear-gradient(180deg,#FFF6E0,#FFB020 120%);-webkit-background-clip:text;background-clip:text;color:transparent}
+.scope::before{content:"";position:absolute;inset:-6%;border-radius:50%;background:radial-gradient(circle,rgba(255,176,32,.16),rgba(255,176,32,0) 60%);filter:blur(10px);pointer-events:none;z-index:-1}
+.top{display:flex;align-items:flex-end;justify-content:space-between;padding:14px 20px 0}
+.top h1{font-family:var(--fd);font-weight:700;font-size:26px;letter-spacing:.3px;margin:0;line-height:1}
+.top h1 small{display:block;font-family:var(--fb);font-weight:500;font-size:13px;color:var(--muted);letter-spacing:0;margin-top:3px}
+.top .clock{font-family:var(--fd);font-weight:600;font-size:22px;font-variant-numeric:tabular-nums;color:var(--muted)}
+main{flex:1;overflow:auto;padding:0 16px 112px}
+section{display:none}section.on{display:block;animation:fadein .35s ease-out}
+@keyframes fadein{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.scope{position:relative;width:min(94vw,380px);height:min(94vw,380px);margin:0 auto -10px}
+.scope canvas{width:100%;height:100%;display:block}
+.scope .mid{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;padding-top:6%}
+.scope .val{font-family:var(--fd);font-weight:700;font-size:76px;line-height:.95;letter-spacing:-1.5px;text-shadow:0 0 24px rgba(255,176,32,.35),0 0 2px rgba(255,255,255,.5)}
+.scope .val.sm{font-size:44px}
+.scope .lab{font-size:14px;color:var(--muted);margin-top:6px}
+.state{text-align:center;font-family:var(--fd);font-weight:600;font-size:22px;min-height:28px;letter-spacing:.2px;margin-top:-6px}
+.state.live{color:var(--amber);text-shadow:0 0 16px rgba(255,176,32,.45)}.state.good{color:var(--teal);text-shadow:0 0 16px rgba(53,224,200,.4)}.state.bad{color:var(--red);text-shadow:0 0 18px rgba(255,90,95,.55)}
+.lead{text-align:center;color:var(--muted);font-size:14px;margin:6px 24px 14px}
+.go{display:block;width:100%;min-height:62px;border:0;border-radius:18px;background:linear-gradient(180deg,#FFC14D,#F49E00);color:#1A1200;font-family:var(--fd);font-weight:700;font-size:22px;letter-spacing:.2px;box-shadow:0 10px 30px rgba(255,176,32,.28),inset 0 1px 0 rgba(255,255,255,.35)}
+.go.stop{background:var(--surface2);color:var(--text);border:1px solid var(--line);box-shadow:none;-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
+.go:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
+.read{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+.read div,.strip,.ticker{background:var(--surface);border:1px solid var(--line);border-radius:16px;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
+.read div{padding:12px 14px;min-height:76px}
+.read b{display:block;font-family:var(--fd);font-weight:600;font-size:28px;line-height:1.05;font-variant-numeric:tabular-nums}
+.read span{font-size:13px;color:var(--muted)}
+.bar{height:6px;border-radius:3px;background:rgba(120,150,190,.18);margin-top:8px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--teal);box-shadow:0 0 10px var(--teal);transition:width .15s}
+.bar.warn i{background:var(--amber);box-shadow:0 0 10px var(--amber)}.bar.bad i{background:var(--red);box-shadow:0 0 10px var(--red)}
+.strip{margin-top:14px;padding:10px 12px 6px}
+.strip canvas{width:100%;height:120px;display:block;border-radius:8px}
+.strip p{margin:6px 2px 0;font-size:13px;color:var(--muted)}
+.err{color:var(--red);font-size:14px;margin:8px 4px 0;min-height:1em}
+video{width:100%;max-height:200px;object-fit:cover;border-radius:16px;background:#000;margin-top:10px;display:block;border:1px solid var(--line)}
+.ticker{margin-top:14px;padding:12px}
+.ticker h3{font-family:var(--fd);font-weight:600;font-size:18px;margin:0 0 8px 2px}
+ul.log{list-style:none;margin:0;padding:0}
+ul.log li{display:grid;grid-template-columns:64px 1fr auto;gap:10px;padding:10px 2px;border-bottom:1px solid var(--line);font-size:15px;align-items:baseline}
+ul.log li time{font-family:var(--fd);font-weight:600;color:var(--amber);font-variant-numeric:tabular-nums}
+ul.log li em{font-style:normal;color:var(--muted);font-size:13px}
+ul.log li .src{font-size:12px;color:var(--muted)}
+.row{display:flex;gap:10px}
+.sec{flex:1;min-height:50px;border-radius:14px;border:1px solid var(--line);background:rgba(33,48,70,.6);color:var(--text);font-family:var(--fd);font-weight:600;font-size:17px}
+.hint{font-size:13px;color:var(--muted);margin:10px 4px 0}
+nav{position:fixed;left:0;right:0;bottom:0;padding:8px 10px calc(10px + env(safe-area-inset-bottom,0px));background:rgba(11,19,34,.78);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(5,1fr);gap:4px;z-index:5}
+nav button{background:transparent;border:0;color:var(--muted);border-radius:12px;min-height:54px;font-family:var(--fd);font-weight:600;font-size:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}
+nav button svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+nav button.on{color:var(--amber);background:rgba(255,176,32,.12);text-shadow:0 0 12px rgba(255,176,32,.5)}
+nav button:focus-visible{outline:2px solid var(--blue)}
+#boot{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#070C16;animation:bootout .6s ease-in 1.6s forwards;pointer-events:none}
+#boot .ring{position:absolute;width:40vmin;height:40vmin;border-radius:50%;border:2px solid var(--amber);opacity:0;animation:ring 1.6s ease-out forwards}
+#boot .ring:nth-child(2){animation-delay:.25s}#boot .ring:nth-child(3){animation-delay:.5s}
+#boot h2{font-family:var(--fd);font-weight:700;font-size:34px;margin:0;letter-spacing:1px;animation:fadein .8s ease-out .2s both}
+#boot p{color:var(--muted);margin:6px 0 0;animation:fadein .8s ease-out .6s both}
+@keyframes ring{0%{transform:scale(.2);opacity:.9}100%{transform:scale(2.4);opacity:0}}
+@keyframes bootout{to{opacity:0;visibility:hidden}}
+@media (prefers-reduced-motion: reduce){.bar i{transition:none}#boot{animation-duration:.01s;animation-delay:.3s}#boot .ring{display:none}section.on{animation:none}}
+</style>
+</head>
+<body>
+<canvas id="bg3d"></canvas>
+<div id="boot"><div class="ring"></div><div class="ring"></div><div class="ring"></div><h2>Lagebild Lite</h2><p>Sensoren bereit</p></div>
+<div class="top"><h1>Lagebild Lite<small id="sub">Kontaktsensor</small></h1><div class="clock" id="clock">–:–:–</div></div>
+<main>
+<div class="scope" id="scope"><canvas id="scope3d"></canvas><div class="mid"><div class="val" id="val">–</div><div class="lab" id="lab"></div></div></div>
+
+<section id="kontakt" class="on">
+  <div class="state" id="kState">Bereit</div>
+  <p class="lead">iPhone flach an Wand, Tür oder Boden. Misst Vibration und Körperschall, zeichnet keine Sprache auf.</p>
+  <button class="go" id="kGo">Messung starten</button>
+  <div class="err" id="kErr"></div>
+  <div class="read">
+    <div><b id="kVoice">–</b><span>Stimme, dB über Ruhe</span><div class="bar" id="kVoiceB"><i></i></div></div>
+    <div><b id="kLow">–</b><span>Tür / Maschine, dB über Ruhe</span><div class="bar" id="kLowB"><i></i></div></div>
+  </div>
+  <div class="strip"><canvas id="kStrip" width="700" height="220"></canvas><p>Vibration der letzten 30 Sekunden</p></div>
+</section>
+
+<section id="sonar">
+  <div class="state" id="sState">Bereit</div>
+  <p class="lead">19 kHz, unhörbar. Bewegung bis etwa 4 m, Atmung bei ruhiger Person 1–2 m frontal. Lautstärke voll, Stummschalter aus.</p>
+  <button class="go" id="sGo">Sonar starten</button>
+  <div class="err" id="sErr"></div>
+  <div class="read">
+    <div><b id="sMov">–</b><span>Bewegung</span><div class="bar" id="sMovB"><i></i></div></div>
+    <div><b id="sCar">–</b><span>Trägerpegel, dB</span></div>
+  </div>
+  <div class="strip"><canvas id="sStrip" width="700" height="220"></canvas><p id="sStripTxt">Echo-Phase der letzten 25 Sekunden</p></div>
+</section>
+
+<section id="puls">
+  <div class="state" id="pState">Bereit</div>
+  <p class="lead">Gesicht oder Handfläche ruhig in den Rahmen, gutes Licht. Keine Bilder werden gespeichert.</p>
+  <button class="go" id="pGo">Kamera starten</button>
+  <div class="err" id="pErr"></div>
+  <video id="pVid" playsinline muted autoplay></video>
+  <div class="read">
+    <div><b id="pQ">–</b><span>Signalqualität</span><div class="bar" id="pQB"><i></i></div></div>
+    <div><b id="pDur">0 s</b><span>Messdauer</span></div>
+  </div>
+  <div class="strip"><canvas id="pStrip" width="700" height="220"></canvas><p>Pulswelle (Grünkanal, trendbereinigt)</p></div>
+</section>
+
+<section id="flug">
+  <div class="state" id="fState">Bereit</div>
+  <p class="lead">Hört Überflüge. Aus der Doppler-Kurve folgen Geschwindigkeit, Abstand und der Zeitpunkt der größten Nähe – der Schlüssel für den späteren Abgleich mit Flugdaten.</p>
+  <button class="go" id="fGo">Mithören starten</button>
+  <div class="err" id="fErr"></div>
+  <div class="read">
+    <div><b id="fV">–</b><span>Geschwindigkeit, m/s</span></div>
+    <div><b id="fD">–</b><span>Abstand bei größter Nähe, m</span></div>
+  </div>
+  <div class="strip"><canvas id="fStrip" width="700" height="220"></canvas><p id="fStripTxt">Spektrogramm 40–400 Hz, 90 Sekunden</p></div>
+  <div class="hint">Bei Flugzeuglärm steht der stärkste Ton mehrere Sekunden still und fällt dann hörbar ab. Der Abgleich mit ADS-B-Flugdaten passiert später aus dem Protokoll.</div>
+</section>
+
+<section id="log">
+  <div class="ticker" style="margin-top:8px"><h3>Einsatzprotokoll</h3>
+    <div class="row"><button class="sec" id="lShare">Teilen</button><button class="sec" id="lCopy">Kopieren</button><button class="sec" id="lClear">Leeren</button></div>
+    <div class="hint" id="lHint">Zeitstempel in Gerätezeit, Konfidenz in Prozent.</div>
+    <ul class="log" id="lList" style="margin-top:8px"></ul>
+  </div>
+</section>
+
+</main>
+<nav>
+  <button class="on" data-t="kontakt" data-n="Kontaktsensor"><svg viewBox="0 0 24 24"><path d="M3 12h3l2-6 4 12 3-8 2 2h4"/></svg>Kontakt</button>
+  <button data-t="sonar" data-n="Ultraschall-Sonar"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M12 4a8 8 0 0 1 8 8M12 8a4 4 0 0 1 4 4M4 12a8 8 0 0 1 8-8"/></svg>Sonar</button>
+  <button data-t="puls" data-n="Puls per Kamera"><svg viewBox="0 0 24 24"><path d="M20 12h-3l-2 5-4-10-2 5H4"/></svg>Puls</button>
+  <button data-t="flug" data-n="Überflug"><svg viewBox="0 0 24 24"><path d="M2 16l20-8-6 6 1 6-3-3-5 1z"/></svg>Überflug</button>
+  <button data-t="log" data-n="Einsatzprotokoll"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5zM8 9h8M8 13h8M8 17h5"/></svg>Protokoll</button>
+</nav>
+
+<script>
+(function(){
+'use strict';
+const $=id=>document.getElementById(id);
+window.LB={level:0,color:'#35E0C8',alarm:false};
+let MODE='kontakt';const VALS={kontakt:['–','× Ruhe'],sonar:['–','Atemzüge / min'],puls:['–','Schläge / min'],flug:['–','Hz, stärkster Ton 60–300 Hz'],log:['','']};
+function setVal(m,v){VALS[m][0]=v;if(m===MODE)$('val').textContent=v}
+function setLab(m,v){VALS[m][1]=v;if(m===MODE)$('lab').textContent=v}
+function showMode(m){MODE=m;$('val').textContent=VALS[m][0];$('lab').textContent=VALS[m][1];$('val').className='val'+(m==='flug'?' sm':'');$('scope').style.display=m==='log'?'none':''}
+(function bg(){
+  if(!window.THREE){return}
+  const cv=$('bg3d');const rd=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true,powerPreference:'low-power'});rd.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
+  const sc=new THREE.Scene();sc.fog=new THREE.FogExp2(0x070c16,0.09);
+  const cam=new THREE.PerspectiveCamera(55,1,0.1,100);cam.position.set(0,0.6,7.5);
+  function size(){const w=innerWidth,h=innerHeight;rd.setSize(w,h,false);cam.aspect=w/h;cam.updateProjectionMatrix()}size();addEventListener('resize',size);
+  // Partikelsphäre
+  const N=1800,pos=new Float32Array(N*3);for(let i=0;i<N;i++){const r=3.2+Math.random()*2.2,th=Math.acos(2*Math.random()-1),ph=Math.random()*Math.PI*2;pos[i*3]=r*Math.sin(th)*Math.cos(ph);pos[i*3+1]=r*Math.cos(th)*0.55;pos[i*3+2]=r*Math.sin(th)*Math.sin(ph)}
+  const pg=new THREE.BufferGeometry();pg.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  const pm=new THREE.PointsMaterial({color:0x8fb4ff,size:0.045,transparent:true,opacity:0.55,blending:THREE.AdditiveBlending,depthWrite:false});const pts=new THREE.Points(pg,pm);sc.add(pts);
+  // Leuchtring
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(2.6,0.025,16,220),new THREE.MeshBasicMaterial({color:0xffb020,transparent:true,opacity:0.9,blending:THREE.AdditiveBlending}));ring.rotation.x=Math.PI/2.6;sc.add(ring);
+  const ring2=new THREE.Mesh(new THREE.TorusGeometry(2.6,0.14,16,220),new THREE.MeshBasicMaterial({color:0xffb020,transparent:true,opacity:0.12,blending:THREE.AdditiveBlending}));ring2.rotation.x=Math.PI/2.6;sc.add(ring2);
+  const ring3=new THREE.Mesh(new THREE.TorusGeometry(3.4,0.012,12,220),new THREE.MeshBasicMaterial({color:0x5b98ff,transparent:true,opacity:0.35,blending:THREE.AdditiveBlending}));ring3.rotation.x=Math.PI/2.1;ring3.rotation.z=0.4;sc.add(ring3);
+  // Scan-Scheibe
+  const disk=new THREE.Mesh(new THREE.RingGeometry(0.2,2.55,96,1,0,0.9),new THREE.MeshBasicMaterial({color:0xffb020,transparent:true,opacity:0.08,side:THREE.DoubleSide,blending:THREE.AdditiveBlending}));disk.rotation.x=Math.PI/2.6;sc.add(disk);
+  const col=new THREE.Color();let t=0,lvl=0;const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function frame(){t+=reduce?0.004:0.012;lvl+=(window.LB.level-lvl)*0.08;
+    col.set(window.LB.color||'#35E0C8');ring.material.color.copy(col);ring2.material.color.copy(col);disk.material.color.copy(col);
+    const s=1+lvl*0.35;ring.scale.set(s,s,s);ring2.scale.set(s,s,s);ring2.material.opacity=0.08+lvl*0.3;ring.material.opacity=0.6+lvl*0.4;
+    pts.rotation.y=t*0.25;pts.rotation.x=Math.sin(t*0.2)*0.12;pm.size=0.04+lvl*0.05;pm.opacity=0.4+lvl*0.4;
+    ring3.rotation.y=-t*0.3;disk.rotation.z=t*1.6;ring.rotation.z=t*0.1;ring2.rotation.z=t*0.1;
+    if(window.LB.alarm){const p=(Date.now()%900)/900;ring2.material.opacity=0.45*(1-p)+0.1;ring2.scale.setScalar(s+p*0.5)}
+    cam.position.x=Math.sin(t*0.15)*0.6;cam.lookAt(0,0,0);rd.render(sc,cam);requestAnimationFrame(frame)}
+  frame();
+})();
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt=d=>d.toTimeString().slice(0,8);
+setInterval(()=>{$('clock').textContent=fmt(new Date())},1000);$('clock').textContent=fmt(new Date());
+
+document.querySelectorAll('nav button').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('nav button').forEach(x=>x.classList.remove('on'));
+  document.querySelectorAll('section').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');$(b.dataset.t).classList.add('on');$('sub').textContent=b.dataset.n;showMode(b.dataset.t);
+}));
+
+/* ---------- Protokoll ---------- */
+const events=[],lastLog={};
+function logEvent(src,text,conf){const now=Date.now(),key=src+'|'+text;if(lastLog[key]&&now-lastLog[key]<4000)return;lastLog[key]=now;events.push({t:new Date(now).toISOString(),src,text,conf});renderLog()}
+function renderLog(){const ul=$('lList');ul.innerHTML='';if(!events.length){ul.innerHTML='<li><time>–</time><span>Noch nichts erfasst. Starte einen Modus, Ereignisse erscheinen hier.</span><em></em></li>';return}
+  events.slice().reverse().slice(0,300).forEach(e=>{const li=document.createElement('li');li.innerHTML='<time>'+fmt(new Date(e.t))+'</time><span>'+e.text+'<br><span class="src">'+e.src+'</span></span><em>'+(e.conf!=null?Math.round(e.conf*100)+' %':'')+'</em>';ul.appendChild(li)})}
+renderLog();
+const logText=()=>events.map(e=>e.t+'\t'+e.src+'\t'+e.text+(e.conf!=null?'\t'+Math.round(e.conf*100)+'%':'')).join('\n');
+$('lShare').onclick=async()=>{const txt=logText()||'Keine Ereignisse';try{if(navigator.share)await navigator.share({title:'Lagebild Lite Protokoll',text:txt});else{await navigator.clipboard.writeText(txt);$('lHint').textContent='In die Zwischenablage kopiert.'}}catch(e){$('lHint').textContent='Teilen nicht möglich: '+e.message}};
+$('lCopy').onclick=async()=>{try{await navigator.clipboard.writeText(logText()||'Keine Ereignisse');$('lHint').textContent='In die Zwischenablage kopiert.'}catch(e){$('lHint').textContent='Kopieren nicht möglich.'}};
+$('lClear').onclick=()=>{events.length=0;renderLog();$('lHint').textContent='Protokoll geleert.'};
+
+/* ---------- Zeichnen ---------- */
+const AMB=()=>css('--amber'),TEAL=()=>css('--teal'),RED=()=>css('--red'),BLUE=()=>css('--blue');
+const SCOPE=(function(){
+  if(!window.THREE)return{update(){}};
+  const cv=$('scope3d');const rd=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true});rd.setPixelRatio(Math.min(2,window.devicePixelRatio||1));rd.setClearColor(0x000000,0);
+  const sc=new THREE.Scene();const cam=new THREE.PerspectiveCamera(38,1,0.1,50);cam.position.set(0,5.2,5.6);cam.lookAt(0,0,0);
+  function size(){const w=cv.clientWidth||300,h=cv.clientHeight||300;rd.setSize(w,h,false);cam.aspect=w/h;cam.updateProjectionMatrix()}size();addEventListener('resize',size);
+  const R=2.4,ADD=THREE.AdditiveBlending;
+  const circ=(r,n=128)=>{const p=[];for(let i=0;i<=n;i++){const a=i/n*Math.PI*2;p.push(new THREE.Vector3(Math.cos(a)*r,0,Math.sin(a)*r))}return new THREE.BufferGeometry().setFromPoints(p)};
+  [0.25,0.5,0.75,1].forEach((k,ix)=>{sc.add(new THREE.Line(circ(R*k),new THREE.LineBasicMaterial({color:ix===3?0xaac4e6:0x6f8db3,transparent:true,opacity:ix===3?0.8:0.35})))});
+  // Skalenstriche
+  const tp=[];for(let d=0;d<360;d+=5){const a=d*Math.PI/180,l=d%30?0.08:0.18;tp.push(new THREE.Vector3(Math.cos(a)*(R-l),0,Math.sin(a)*(R-l)),new THREE.Vector3(Math.cos(a)*R,0,Math.sin(a)*R))}
+  sc.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(tp),new THREE.LineBasicMaterial({color:0xaac4e6,transparent:true,opacity:0.55})));
+  const cross=[new THREE.Vector3(-R,0,0),new THREE.Vector3(R,0,0),new THREE.Vector3(0,0,-R),new THREE.Vector3(0,0,R)];sc.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(cross),new THREE.LineBasicMaterial({color:0x6f8db3,transparent:true,opacity:0.25})));
+  // Bodenscheibe
+  sc.add(new THREE.Mesh(new THREE.CircleGeometry(R,96).rotateX(-Math.PI/2),new THREE.MeshBasicMaterial({color:0x0e1a30,transparent:true,opacity:0.55})));
+  // Verlaufsfläche (Fan) + Wand
+  const N=60;const fanPos=new Float32Array((N+2)*3);const fanGeo=new THREE.BufferGeometry();fanGeo.setAttribute('position',new THREE.BufferAttribute(fanPos,3));
+  const fanIdx=[];for(let i=1;i<=N;i++){fanIdx.push(0,i,i%N+1)}fanGeo.setIndex(fanIdx);
+  const fanMat=new THREE.MeshBasicMaterial({color:0x35e0c8,transparent:true,opacity:0.22,side:THREE.DoubleSide,blending:ADD,depthWrite:false});const fan=new THREE.Mesh(fanGeo,fanMat);fan.position.y=0.01;sc.add(fan);
+  const wallPos=new Float32Array((N+1)*2*3);const wallGeo=new THREE.BufferGeometry();wallGeo.setAttribute('position',new THREE.BufferAttribute(wallPos,3));
+  const wIdx=[];for(let i=0;i<N;i++){const a=i*2,b=i*2+1,c=i*2+2,d=i*2+3;wIdx.push(a,b,c,b,d,c)}wallGeo.setIndex(wIdx);
+  const wallMat=new THREE.MeshBasicMaterial({color:0x35e0c8,transparent:true,opacity:0.28,side:THREE.DoubleSide,blending:ADD,depthWrite:false});sc.add(new THREE.Mesh(wallGeo,wallMat));
+  const rimGeo=new THREE.BufferGeometry();rimGeo.setAttribute('position',new THREE.BufferAttribute(new Float32Array((N+1)*3),3));const rim=new THREE.LineLoop(rimGeo,new THREE.LineBasicMaterial({color:0x35e0c8,transparent:true,opacity:0.95}));sc.add(rim);
+  // Sweep-Fächer
+  const wedges=[];for(let k=0;k<24;k++){const g=new THREE.RingGeometry(0.08,R,48,1,0,0.06).rotateX(-Math.PI/2);const m=new THREE.MeshBasicMaterial({color:0xffb020,transparent:true,opacity:0.22*(1-k/24),side:THREE.DoubleSide,blending:ADD,depthWrite:false});const w=new THREE.Mesh(g,m);w.position.y=0.02;sc.add(w);wedges.push(w)}
+  const beam=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0.02,0),new THREE.Vector3(R,0.02,0)]),new THREE.LineBasicMaterial({color:0xffb020,transparent:true,opacity:1}));sc.add(beam);
+  // Pegel-Säule und Kugel
+  const pole=new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,1,8),new THREE.MeshBasicMaterial({color:0xffb020,transparent:true,opacity:0.8,blending:ADD}));sc.add(pole);
+  const orb=new THREE.Mesh(new THREE.SphereGeometry(0.11,24,24),new THREE.MeshBasicMaterial({color:0xffb020}));sc.add(orb);
+  const halo=new THREE.Mesh(new THREE.SphereGeometry(0.26,24,24),new THREE.MeshBasicMaterial({color:0xffb020,transparent:true,opacity:0.25,blending:ADD,depthWrite:false}));sc.add(halo);
+  // Alarmring
+  const alarm=new THREE.Mesh(new THREE.RingGeometry(0.95,1,96).rotateX(-Math.PI/2),new THREE.MeshBasicMaterial({color:0xff5a5f,transparent:true,opacity:0,side:THREE.DoubleSide,blending:ADD,depthWrite:false}));alarm.position.y=0.03;sc.add(alarm);
+  const col=new THREE.Color();let st={level:0,hist:[],color:'#35E0C8',sweep:0},lvl=0,t=0;const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function frame(){t+=0.016;lvl+=(st.level-lvl)*0.12;col.set(st.color);
+    fanMat.color.copy(col);wallMat.color.copy(col);rim.material.color.copy(col);wedges.forEach(w=>w.material.color.copy(col));beam.material.color.copy(col);pole.material.color.copy(col);orb.material.color.copy(col);halo.material.color.copy(col);
+    const h=st.hist,n=h.length;fanPos[0]=0;fanPos[1]=0;fanPos[2]=0;
+    for(let i=0;i<=N;i++){const v=n?Math.min(1,h[Math.min(n-1,Math.floor(i/N*n))%Math.max(1,n)]||0):0;const a=-Math.PI/2+i/N*Math.PI*2;const r=R*(0.12+0.86*v);const x=Math.cos(a)*r,z=Math.sin(a)*r,y=0.05+v*1.25;
+      if(i<N){fanPos[(i+1)*3]=x;fanPos[(i+1)*3+1]=0;fanPos[(i+1)*3+2]=z}
+      wallPos[i*6]=x;wallPos[i*6+1]=0;wallPos[i*6+2]=z;wallPos[i*6+3]=x;wallPos[i*6+4]=y;wallPos[i*6+5]=z;
+      if(i<N+1){rimGeo.attributes.position.array[i*3]=x;rimGeo.attributes.position.array[i*3+1]=y;rimGeo.attributes.position.array[i*3+2]=z}}
+    fanGeo.attributes.position.needsUpdate=true;wallGeo.attributes.position.needsUpdate=true;rimGeo.attributes.position.needsUpdate=true;
+    const sw=st.sweep==null?t*0.5%1:st.sweep;const a=-sw*Math.PI*2+Math.PI/2;wedges.forEach((w,k)=>{w.rotation.y=a-k*0.06});beam.rotation.y=a;
+    const lr=R*(0.12+0.86*lvl),ly=0.05+lvl*1.25;pole.position.set(0,ly/2,-lr);pole.scale.y=ly;orb.position.set(0,ly,-lr);halo.position.copy(orb.position);halo.scale.setScalar(1+Math.sin(t*4)*0.15);
+    if(st.color.toLowerCase()===RED().toLowerCase()){const p=(Date.now()%1100)/1100;alarm.scale.setScalar(0.2+p*2.3);alarm.material.opacity=0.8*(1-p)}else alarm.material.opacity=0;
+    cam.position.x=reduce?0:Math.sin(t*0.25)*0.9;cam.position.z=5.6+(reduce?0:Math.cos(t*0.25)*0.3);cam.lookAt(0,0.3,0);
+    if($('scope').style.display!=='none')rd.render(sc,cam);requestAnimationFrame(frame)}
+  frame();
+  return{update(o){st=o}};
+})();
+function scope(mode,level,hist,color,sweep){window.LB.level=level;window.LB.color=color;window.LB.alarm=(color===RED());if(mode===MODE)SCOPE.update({level,hist,color,sweep})}
+function strip(cv,arr,min,max,color){const c=cv.getContext('2d'),W=cv.width,H=cv.height;c.clearRect(0,0,W,H);c.strokeStyle=css('--line');c.lineWidth=1;c.beginPath();c.moveTo(0,H/2);c.lineTo(W,H/2);c.stroke();if(arr.length<2)return;c.save();c.shadowColor=color;c.shadowBlur=14;c.strokeStyle=color;c.lineWidth=3;c.beginPath();const n=arr.length;for(let i=0;i<n;i++){const x=i/(n-1)*W,y=H-((arr[i]-min)/((max-min)||1))*H;i?c.lineTo(x,y):c.moveTo(x,y)}c.stroke();c.restore()}
+function bar(id,v,cls){const b=$(id);b.className='bar'+(cls?' '+cls:'');b.firstElementChild.style.width=Math.max(0,Math.min(100,v*100))+'%'}
+function state(id,txt,cls){const s=$(id);s.textContent=txt;s.className='state'+(cls?' '+cls:'')}
+function go(id,on,a,b){const g=$(id);g.textContent=on?b:a;g.classList.toggle('stop',on)}
+async function getMic(){return navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false},video:false})}
+let actx=null;function ctx(){if(!actx)actx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});if(actx.state==='suspended')actx.resume();return actx}
+function dftPeak(series,fs,fmin,fmax){const n=series.length;let mean=0;for(const v of series)mean+=v;mean/=n;const x=series.map(v=>v-mean);let best={f:0,amp:0},sum=0,cnt=0;for(let f=fmin;f<=fmax;f+=0.01){let re=0,im=0;for(let i=0;i<n;i++){const ph=2*Math.PI*f*i/fs;re+=x[i]*Math.cos(ph);im+=x[i]*Math.sin(ph)}const a=Math.sqrt(re*re+im*im)/n;sum+=a;cnt++;if(a>best.amp)best={f,amp:a}}return{f:best.f,amp:best.amp,mean:sum/cnt}}
+
+/* ---------- Kontaktsensor ---------- */
+let kOn=false,kAcc=[],kBase=null,kT0=0,kAn=null,kBuf=null,kSeries=[],kHist=[];
+async function kStart(){
+  if(kOn){kOn=false;window.removeEventListener('devicemotion',kMotion);go('kGo',false,'Messung starten','Messung beenden');state('kState','Beendet');return}
+  $('kErr').textContent='';
+  let motionOk=true;
+  try{
+    if(typeof DeviceMotionEvent!=='undefined'&&typeof DeviceMotionEvent.requestPermission==='function'){try{const r=await DeviceMotionEvent.requestPermission();motionOk=(r==='granted')}catch(e){motionOk=false}}
+    const st=await getMic();const ac=ctx();const src=ac.createMediaStreamSource(st);kAn=ac.createAnalyser();kAn.fftSize=4096;kAn.smoothingTimeConstant=0.3;src.connect(kAn);kBuf=new Float32Array(kAn.frequencyBinCount);
+  }catch(e){$('kErr').textContent='Mikrofon nicht verfügbar: '+e.message+'. Die Seite muss direkt in Safari über HTTPS laufen, nicht in einem eingebetteten Fenster.';return}
+  if(!motionOk)$('kErr').textContent='Bewegungssensor in diesem Fenster gesperrt – es läuft nur der Körperschall über das Mikrofon. Auf eigener Adresse (GitHub Pages o. ä.) ist beides verfügbar.';
+  kOn=true;kBase=null;kT0=Date.now();kAcc=[];kSeries=[];kHist=[];go('kGo',true,'Messung starten','Messung beenden');window.addEventListener('devicemotion',kMotion);kLoop();
+}
+function kMotion(e){if(!kOn)return;const a=e.acceleration||e.accelerationIncludingGravity;if(!a)return;kAcc.push(Math.hypot(a.x||0,a.y||0,a.z||0));if(kAcc.length>600)kAcc.shift()}
+function kLoop(){
+  if(!kOn)return;
+  let vib=0;if(kAcc.length>20){const w=kAcc.slice(-30);const m=w.reduce((s,v)=>s+v,0)/w.length;vib=Math.sqrt(w.reduce((s,v)=>s+(v-m)**2,0)/w.length)}
+  kAn.getFloatFrequencyData(kBuf);const binHz=48000/kAn.fftSize;
+  const band=(lo,hi)=>{let s=0,n=0;for(let i=Math.floor(lo/binHz);i<=Math.floor(hi/binHz);i++){s+=Math.pow(10,kBuf[i]/10);n++}return 10*Math.log10(s/n+1e-12)};
+  const low=band(20,80),voice=band(100,4000);const el=(Date.now()-kT0)/1000;
+  let level=0,color=TEAL();
+  if(el<5){state('kState','Kalibriere Ruhe, '+Math.ceil(5-el)+' s',"live");setVal('kontakt',Math.ceil(5-el));setLab('kontakt','Sekunden ruhig halten');if(!kBase)kBase={vib:[],low:[],voice:[]};kBase.vib.push(vib);kBase.low.push(low);kBase.voice.push(voice);color=AMB()}
+  else{
+    if(!kBase.done){const med=a=>{const s=a.slice().sort((x,y)=>x-y);return s[Math.floor(s.length/2)]};kBase.v=Math.max(med(kBase.vib),0.003);kBase.l=med(kBase.low);kBase.w=med(kBase.voice);kBase.done=true;logEvent('Kontakt','Ruhe kalibriert');setLab('kontakt','× Ruhe')}
+    const vr=vib/kBase.v;level=Math.min(1,Math.log10(1+vr)/1.3);setVal('kontakt',vr<10?vr.toFixed(1):Math.round(vr));
+    const dl=low-kBase.l,dw=voice-kBase.w;
+    $('kVoice').textContent=(dw>=0?'+':'')+dw.toFixed(0);bar('kVoiceB',Math.min(1,dw/25),dw>12?'bad':dw>6?'warn':'');
+    $('kLow').textContent=(dl>=0?'+':'')+dl.toFixed(0);bar('kLowB',Math.min(1,dl/25),dl>8?'bad':dl>5?'warn':'');
+    if(vr>6){state('kState','Schritt oder Stoß','bad');color=RED();logEvent('Kontakt','Vibration stark: Schritt oder Stoß ('+vr.toFixed(0)+'× Ruhe)',Math.min(.95,.5+vr/40))}
+    else if(dw>12){state('kState','Stimme oder Geräusch','bad');color=RED();logEvent('Kontakt','Körperschall: Stimme oder Geräusch (+'+dw.toFixed(0)+' dB)',Math.min(.9,.5+dw/40))}
+    else if(dl>8){state('kState','Tür oder Maschine','live');color=AMB();logEvent('Kontakt','Tieffrequent: Tür oder Maschine (+'+dl.toFixed(0)+' dB)',.6)}
+    else if(vr>2.5||Math.max(dl,dw)>5){state('kState','Leichte Aktivität','live');color=AMB()}
+    else state('kState','Ruhig','good');
+  }
+  kHist.push(level);if(kHist.length>60)kHist.shift();kSeries.push(vib);if(kSeries.length>300)kSeries.shift();
+  scope('kontakt',level,kHist,color,(el%4)/4);strip($('kStrip'),kSeries,0,Math.max(0.05,...kSeries),color);
+  setTimeout(kLoop,100);
+}
+$('kGo').onclick=kStart;
+
+/* ---------- Sonar ---------- */
+let sOn=false,sOsc=null,sProc=null,sAn=null,sBuf=null,sI=[],sQ=[],sAmp=[],sT=[],sHist=[],sLastBr=0,sT0=0;const F0=19000;
+async function sStart(){
+  if(sOn){sOn=false;try{sOsc.stop()}catch(e){}if(sProc)sProc.disconnect();go('sGo',false,'Sonar starten','Sonar beenden');state('sState','Beendet');return}
+  $('sErr').textContent='';
+  try{const st=await getMic();const ac=ctx();const src=ac.createMediaStreamSource(st);
+    sAn=ac.createAnalyser();sAn.fftSize=8192;sAn.smoothingTimeConstant=0.5;src.connect(sAn);sBuf=new Float32Array(sAn.frequencyBinCount);
+    sOsc=ac.createOscillator();sOsc.type='sine';sOsc.frequency.value=F0;const g=ac.createGain();g.gain.value=0.9;sOsc.connect(g).connect(ac.destination);sOsc.start();
+    sProc=ac.createScriptProcessor(4096,1,1);let phase=0;const dph=2*Math.PI*F0/ac.sampleRate;
+    sProc.onaudioprocess=ev=>{const x=ev.inputBuffer.getChannelData(0);let I=0,Q=0;for(let i=0;i<x.length;i++){I+=x[i]*Math.cos(phase);Q+=x[i]*Math.sin(phase);phase+=dph;if(phase>2*Math.PI)phase-=2*Math.PI}I/=x.length;Q/=x.length;sI.push(I);sQ.push(Q);sAmp.push(Math.hypot(I,Q));sT.push(ac.currentTime);if(sAmp.length>400){sI.shift();sQ.shift();sAmp.shift();sT.shift()}};
+    src.connect(sProc);const sink=ac.createGain();sink.gain.value=0;sProc.connect(sink).connect(ac.destination);
+  }catch(e){$('sErr').textContent='Konnte nicht starten: '+e.message;return}
+  sOn=true;sI=[];sQ=[];sAmp=[];sT=[];sHist=[];sT0=Date.now();go('sGo',true,'Sonar starten','Sonar beenden');sLoop();
+}
+function sLoop(){
+  if(!sOn)return;
+  sAn.getFloatFrequencyData(sBuf);const binHz=48000/sAn.fftSize,cb=Math.round(F0/binHz),lin=i=>Math.pow(10,sBuf[i]/10);
+  const car=lin(cb-1)+lin(cb)+lin(cb+1);let sb=0;for(let k=4;k<=40;k++)sb+=lin(cb-k)+lin(cb+k);const ratio=sb/(car+1e-12);
+  const cdb=10*Math.log10(car+1e-12);$('sCar').textContent=cdb.toFixed(0);
+  const mv=Math.min(1,Math.log10(1+ratio*50)/2);$('sMov').textContent=ratio>0.08?'stark':ratio>0.025?'leicht':'keine';bar('sMovB',mv,ratio>0.08?'bad':ratio>0.025?'warn':'');
+  let color=TEAL(),level=mv;
+  if(cdb<-75){state('sState','Kein Trägersignal – Lautstärke prüfen','live');color=AMB()}
+  else if(ratio>0.08){state('sState','Bewegung im Raum','bad');color=RED();logEvent('Sonar','Bewegung im Raum',Math.min(.95,.5+ratio))}
+  else if(ratio>0.025){state('sState','Leichte Bewegung','live');color=AMB()}
+  else state('sState','Ruhig','good');
+  const el=(Date.now()-sT0)/1000;
+  if(sAmp.length>=250){const dur=sT[sT.length-1]-sT[0],fs=sAmp.length/dur,n=Math.min(sAmp.length,Math.round(25*fs));
+    const ampS=sAmp.slice(-n);const ph=[];let prev=0,acc=0;for(let i=sAmp.length-n;i<sAmp.length;i++){const p=Math.atan2(sQ[i],sI[i]);if(i>sAmp.length-n){let d=p-prev;while(d>Math.PI)d-=2*Math.PI;while(d<-Math.PI)d+=2*Math.PI;acc+=d}prev=p;ph.push(acc)}
+    const r1=dftPeak(ampS,fs,0.12,0.6),r2=dftPeak(ph,fs,0.12,0.6);const pick=(r1.amp/(r1.mean+1e-12))>(r2.amp/(r2.mean+1e-12))?r1:r2;const prom=pick.amp/(pick.mean+1e-12);
+    if(ratio<0.04&&prom>2.2){const bpm=Math.round(pick.f*60);setVal('sonar',bpm);$('sStripTxt').textContent='Atmung erkannt, Prominenz '+prom.toFixed(1);if(bpm!==sLastBr){logEvent('Sonar','Atmung '+bpm+'/min',Math.min(.9,.4+prom/8));sLastBr=bpm}}
+    else{setVal('sonar','–');$('sStripTxt').textContent=(ratio>=0.04?'Zu viel Bewegung für Atmung':'Kein periodisches Signal')+', Prominenz '+prom.toFixed(1)}
+    strip($('sStrip'),ph,Math.min(...ph),Math.max(...ph),TEAL());
+  }else{$('sStripTxt').textContent='Sammle Signal, '+Math.min(25,Math.round(el))+' von 25 s';if(sAmp.length>5)strip($('sStrip'),sAmp,0,Math.max(...sAmp),AMB())}
+  sHist.push(level);if(sHist.length>60)sHist.shift();scope('sonar',level,sHist,color,(el%3)/3);
+  setTimeout(sLoop,150);
+}
+$('sGo').onclick=sStart;
+
+/* ---------- Puls ---------- */
+let pOn=false,pStream=null,pG=[],pT=[],pHist=[],pT0=0;const pCanvas=document.createElement('canvas');pCanvas.width=64;pCanvas.height=64;
+async function pStart(){
+  if(pOn){pOn=false;if(pStream)pStream.getTracks().forEach(t=>t.stop());go('pGo',false,'Kamera starten','Kamera beenden');state('pState','Beendet');return}
+  $('pErr').textContent='';
+  try{pStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:640},height:{ideal:480}},audio:false});$('pVid').srcObject=pStream;await $('pVid').play()}catch(e){$('pErr').textContent='Kamera nicht verfügbar: '+e.message;return}
+  pOn=true;pG=[];pT=[];pHist=[];pT0=performance.now();go('pGo',true,'Kamera starten','Kamera beenden');pLoop();
+}
+function pLoop(){
+  if(!pOn)return;const v=$('pVid');
+  if(v.videoWidth){const c=pCanvas.getContext('2d',{willReadFrequently:true});const sw=v.videoWidth*.4,sh=v.videoHeight*.4;c.drawImage(v,(v.videoWidth-sw)/2,(v.videoHeight-sh)/2,sw,sh,0,0,64,64);const d=c.getImageData(0,0,64,64).data;let g=0,r=0;for(let i=0;i<d.length;i+=4){r+=d[i];g+=d[i+1]}g/=d.length/4;r/=d.length/4;
+    pG.push(g);pT.push(performance.now()/1000);if(pG.length>900){pG.shift();pT.shift()}
+    const dur=pT[pT.length-1]-pT[0];$('pDur').textContent=Math.round(dur)+' s';
+    let level=0,color=AMB();
+    if(r<40)state('pState','Zu dunkel, mehr Licht','live');
+    if(pG.length>=200){const fs=pG.length/dur;const w=Math.max(3,Math.round(1.5*fs));const det=pG.map((x,i)=>{const a=Math.max(0,i-w),b=Math.min(pG.length-1,i+w);let s=0;for(let j=a;j<=b;j++)s+=pG[j];return x-s/(b-a+1)});
+      const res=dftPeak(det,fs,0.75,3.0);const prom=res.amp/(res.mean+1e-12);level=Math.min(1,(prom-1)/4);$('pQ').textContent=prom.toFixed(1);bar('pQB',level,prom>3?'':prom>2?'warn':'bad');
+      if(prom>2.2&&dur>=15){const bpm=Math.round(res.f*60);setVal('puls',bpm);state('pState','Messung gültig','good');color=TEAL();logEvent('Puls','Herzrate '+bpm+'/min (Sichtlinie)',Math.min(.9,.4+prom/10))}
+      else{setVal('puls','–');state('pState','Ruhig halten, Signal schwach','live')}
+      strip($('pStrip'),det.slice(-300),Math.min(...det.slice(-300)),Math.max(...det.slice(-300)),RED());
+    }else state('pState','Sammle Signal, '+Math.round(dur)+' von 20 s','live');
+    pHist.push(level);if(pHist.length>60)pHist.shift();scope('puls',level,pHist,color,null);
+  }
+  requestAnimationFrame(pLoop);
+}
+$('pGo').onclick=pStart;
+
+/* ---------- Überflug (Doppler) ---------- */
+let fOn=false,fAn=null,fBuf=null,fTrack=[],fSpec=[],fHist=[],fT0=0,fEvent=null;const C=343;
+async function fStart(){
+  if(fOn){fOn=false;go('fGo',false,'Mithören starten','Mithören beenden');state('fState','Beendet');return}
+  $('fErr').textContent='';
+  try{const st=await getMic();const ac=ctx();const src=ac.createMediaStreamSource(st);fAn=ac.createAnalyser();fAn.fftSize=32768;fAn.smoothingTimeConstant=0.6;src.connect(fAn);fBuf=new Float32Array(fAn.frequencyBinCount)}
+  catch(e){$('fErr').textContent='Konnte nicht starten: '+e.message;return}
+  fOn=true;fTrack=[];fSpec=[];fHist=[];fT0=Date.now();fEvent=null;go('fGo',true,'Mithören starten','Mithören beenden');fLoop();
+}
+function fLoop(){
+  if(!fOn)return;
+  fAn.getFloatFrequencyData(fBuf);const binHz=48000/fAn.fftSize;// ≈1,46 Hz
+  const lo=Math.floor(40/binHz),hi=Math.floor(400/binHz);
+  // Spektrum-Spalte (log-Pegel, normiert)
+  const col=new Float32Array(hi-lo);let mx=-200,mn=0,bi=-1;
+  for(let i=lo;i<hi;i++){col[i-lo]=fBuf[i];if(fBuf[i]>mx){mx=fBuf[i]}}
+  // stärkster Ton 60–300 Hz, interpoliert
+  const l2=Math.floor(60/binHz),h2=Math.floor(300/binHz);let pk=-200;for(let i=l2;i<h2;i++){if(fBuf[i]>pk){pk=fBuf[i];bi=i}}
+  let fpk=bi*binHz;if(bi>0&&bi<fBuf.length-1){const a=fBuf[bi-1],b=fBuf[bi],c=fBuf[bi+1];const p=0.5*(a-c)/(a-2*b+c);if(isFinite(p))fpk=(bi+p)*binHz}
+  // Prominenz des Tons gegenüber dem Mittel des Bandes
+  let avg=0;for(let i=l2;i<h2;i++)avg+=Math.pow(10,fBuf[i]/10);avg=10*Math.log10(avg/(h2-l2)+1e-12);const prom=pk-avg;
+  const now=(Date.now()-fT0)/1000;
+  fSpec.push(col);if(fSpec.length>300)fSpec.shift();
+  const tonal=prom>12;setVal('flug',tonal?fpk.toFixed(1):'–');
+  fTrack.push({t:now,f:tonal?fpk:null,p:prom});if(fTrack.length>600)fTrack.shift();
+  // Ereignis: zusammenhängende tonale Spur ≥ 15 s
+  const run=[];for(let i=fTrack.length-1;i>=0&&fTrack[i].f!=null;i--)run.unshift(fTrack[i]);
+  let level=Math.min(1,Math.max(0,(prom-6)/20)),color=TEAL();
+  if(run.length>0&&run[run.length-1].t-run[0].t>=15){
+    const fs=run.slice(0,Math.max(3,Math.floor(run.length*0.15))).map(r=>r.f),fe=run.slice(-Math.max(3,Math.floor(run.length*0.15))).map(r=>r.f);
+    const med=a=>{const s=a.slice().sort((x,y)=>x-y);return s[Math.floor(s.length/2)]};const fhi=med(fs),flo=med(fe);
+    if(fhi>flo*1.03){const v=C*(fhi-flo)/(fhi+flo),f0=2*fhi*flo/(fhi+flo);
+      // CPA: Zeitpunkt, an dem die Spur f0 kreuzt; Steigung dort
+      let ci=run.findIndex(r=>r.f<=f0);if(ci<2)ci=Math.floor(run.length/2);const a=run[Math.max(0,ci-3)],b=run[Math.min(run.length-1,ci+3)];const slope=Math.abs((b.f-a.f)/((b.t-a.t)||1));
+      const d=slope>0?f0*v*v/(C*slope):NaN;
+      $('fV').textContent=v.toFixed(0);$('fD').textContent=isFinite(d)?Math.round(d):'–';state('fState','Überflug, Doppler-Kurve läuft','live');color=AMB();
+      fEvent={v,d,f0,cpa:new Date(fT0+run[ci].t*1000)};
+    }else{state('fState','Dauerton, noch kein Abfall','live');color=AMB()}
+  }else if(tonal){state('fState','Tonales Signal '+fpk.toFixed(0)+' Hz','live');color=AMB()}
+  else{state('fState',fEvent?'Überflug erfasst':'Höre zu','good');
+    if(fEvent){logEvent('Überflug','CPA '+fmt(fEvent.cpa)+' Uhr, '+fEvent.v.toFixed(0)+' m/s, Abstand ≈ '+(isFinite(fEvent.d)?Math.round(fEvent.d):'?')+' m, f0 '+fEvent.f0.toFixed(1)+' Hz',.6);fEvent=null;$('fV').textContent='–';$('fD').textContent='–'}}
+  fHist.push(level);if(fHist.length>60)fHist.shift();scope('flug',level,fHist,color,(now%6)/6);
+  // Spektrogramm zeichnen
+  const cv=$('fStrip'),c=cv.getContext('2d'),W=cv.width,H=cv.height;c.fillStyle=css('--bg');c.fillRect(0,0,W,H);const nc=fSpec.length,cw=Math.max(1,W/300);
+  for(let x=0;x<nc;x++){const sp=fSpec[x];let mxv=-200,mnv=0;for(let i=0;i<sp.length;i++){if(sp[i]>mxv)mxv=sp[i];if(sp[i]<mnv)mnv=sp[i]}
+    for(let y=0;y<sp.length;y++){const v=(sp[y]-mnv)/((mxv-mnv)||1);if(v<0.5)continue;const yy=H-(y/sp.length)*H;const t=(v-0.5)/0.5;c.fillStyle=t<0.7?'rgba(255,176,32,'+(t/0.7).toFixed(2)+')':'rgba(255,'+Math.round(176+79*(t-0.7)/0.3)+','+Math.round(32+223*(t-0.7)/0.3)+',1)';c.fillRect(x*cw,yy-2,cw,2)}}
+  setTimeout(fLoop,300);
+}
+$('fGo').onclick=fStart;
+})();
+</script>
+</body>
+</html>
