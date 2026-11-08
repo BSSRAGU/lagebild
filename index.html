@@ -102,7 +102,7 @@ nav button.run .dot{visibility:visible}
 <section id="sonar">
   <div class="state" id="sState" role="status" aria-live="polite">Bereit</div>
   <div class="detail" id="sDetail"></div>
-  <p class="lead">FMCW-Chirp ab 17,5 kHz – für manche Menschen und Tiere hörbar. Lautstärke voll, Stummschalter aus, keine Kopfhörer. Entfernungen beruhen auf einer automatischen Direktpfad-Kalibrierung und sind <b>nicht validiert</b>.</p>
+  <p class="lead">FMCW-Chirp ab 17,5 kHz – für manche Menschen und Tiere hörbar. Findet das Telefon den eigenen Ton dort nicht, wechselt der Selbsttest automatisch in tiefere, deutlich hörbare Bänder. Lautstärke voll, Stummschalter aus, keine Kopfhörer. Entfernungen beruhen auf einer automatischen Direktpfad-Kalibrierung und sind <b>nicht validiert</b>.</p>
   <button class="go" id="sGo">Sonar starten</button>
   <div class="read">
     <div><b id="sPer">–</b><span>Periodische Bewegung, pro min</span><em id="sPerQ"></em></div>
@@ -361,7 +361,7 @@ function kLoop(s,k){
 const SON_N=2048,SON_MAXR=4.0,SON_BIN=8;
 const WORKLET_SRC=`class LbSonar extends AudioWorkletProcessor{
 constructor(o){super();const p=o.processorOptions;this.ref=p.ref;this.N=this.ref.length;this.gain=p.gain;this.on=true;this.rec=new Float32Array(this.N);this.last=-1;this.seq=0;this.clip=0;this.noIn=0;this.gap=0;
-this.port.onmessage=e=>{const d=e.data;if(d.cmd==='stop')this.on=false;else if(d.cmd==='gain')this.gain=d.v}}
+this.port.onmessage=e=>{const d=e.data;if(d.cmd==='stop')this.on=false;else if(d.cmd==='gain')this.gain=d.v;else if(d.cmd==='ref'&&d.ref.length===this.N)this.ref=d.ref}}
 process(inputs,outputs){if(!this.on)return false;const f0=currentFrame;const out=outputs[0];const n=out[0]?out[0].length:128;
 if(this.last>=0&&f0!==this.last+n)this.gap++;this.last=f0;const inp=inputs[0]&&inputs[0].length?inputs[0][0]:null;if(!inp)this.noIn++;
 const N=this.N,ref=this.ref,g=this.gain;for(let i=0;i<n;i++){const f=f0+i,p=f%N,s=ref[p]*g;for(let c=0;c<out.length;c++)out[c][i]=s;const x=inp?inp[i]:0;if(x>0.98||x<-0.98)this.clip++;this.rec[p]=x;
@@ -369,6 +369,15 @@ if(p===N-1){this.port.postMessage({seq:this.seq++,frame:f-N+1,data:this.rec,clip
 return true}}
 registerProcessor('lb-sonar',LbSonar);`;
 function makeChirp(N,fs,f0,f1){const r=new Float32Array(N),T=N/fs,k=(f1-f0)/T,tap=Math.round(N*0.06);for(let n=0;n<N;n++){const t=n/fs;let w=1;if(n<tap)w=0.5-0.5*Math.cos(Math.PI*n/tap);else if(n>N-1-tap)w=0.5-0.5*Math.cos(Math.PI*(N-1-n)/tap);r[n]=Math.sin(2*Math.PI*(f0*t+0.5*k*t*t))*w}return r}
+const SON_BANDS=[{f0:17500,f1:22000,gain:0.8,name:'17,5–22 kHz'},{f0:13000,f1:17000,gain:0.5,name:'13–17 kHz'},{f0:8000,f1:12000,gain:0.3,name:'8–12 kHz'},{f0:3000,f1:7000,gain:0.2,name:'3–7 kHz'}];
+function bandRef(N,fs,b,fft){const ref=makeChirp(N,fs,b.f0,b.f1);const Rre=Float64Array.from(ref),Rim=new Float64Array(N);fft(Rre,Rim,false);
+  const k0=Math.floor(b.f0/fs*N),k1=Math.ceil(b.f1/fs*N);for(let k=0;k<N;k++){let w=0;if(k>=k0&&k<=k1)w=0.5-0.5*Math.cos(2*Math.PI*(k-k0)/(k1-k0));Rre[k]*=w;Rim[k]*=w}return{ref,Rre,Rim}}
+function setBand(st,i){const b=st.bands[i],r=bandRef(st.N,st.fs,b,st.fft);st.bandIdx=i;st.ref=r.ref;st.Rre=r.Rre;st.Rim=r.Rim;st.f0=b.f0;st.f1=b.f1;st.gain=b.gain;st.bandStart=performance.now();st.pIn=0;st.pRef=0;st.pN=0;
+  try{st.node.port.postMessage({cmd:'ref',ref:r.ref});st.node.port.postMessage({cmd:'gain',v:b.gain})}catch(e){}st.calN=0;st.calAcc.fill(0)}
+function sonarHint(st){const r=st.bandRes.filter(Boolean);const anyLevel=r.some(x=>isFinite(x.lvl)&&x.lvl>6);const ec=st.info&&st.info['Echoauslöschung'];
+  if(ec==='an')return 'Safari meldet aktive Echounterdrückung – sie entfernt den eigenen Ton aus dem Mikrofon.';
+  if(anyLevel)return 'Ton kommt im Mikrofon an, passt aber nicht zum Sendesignal – vermutlich Signalverarbeitung von iOS (Echounterdrückung) trotz Abschaltung.';
+  return 'Im Mikrofon kommt kein Sendeton an. Lautstärke voll? Stummschalter aus? Lautsprecher unten frei? Kopfhörer/Bluetooth getrennt?'}
 let SON=null;// Zustand der letzten Sonarsitzung (für Export)
 MODES.sonar={name:'Sonar',ended(key,d){setState('s',key,d);['sPer','sHr','sRange','sMov'].forEach(i=>$(i).textContent='–');['sPerQ','sHrQ','sRangeQ'].forEach(i=>$(i).textContent='');bar('sMovB',0);setVal('sonar','–');resetScope('sonar');
   if(SON&&SON.rec&&SON.rec.on){SON.rec.on=false;$('sRec').textContent='Rohdaten aufzeichnen';$('sRec').classList.remove('on');$('sRecHint').textContent='Aufzeichnung mit Sitzungsende beendet: '+SON.rec.blocks.length+' Sweeps ('+nf(SON.rec.blocks.length*SON.N/SON.fs,0)+' s). Export möglich.'}}};
@@ -382,12 +391,12 @@ $('sGo').onclick=()=>{if(S.cur&&S.cur.mode==='sonar'){stopSession('beendet','Son
     const url=URL.createObjectURL(new Blob([WORKLET_SRC],{type:'application/javascript'}));
     try{await ctx.audioWorklet.addModule(url)}catch(e){throw new Error('AudioWorklet konnte nicht geladen werden ('+(e.name||e.message)+') – Sonar nicht verfügbar.')}finally{URL.revokeObjectURL(url)}
     if(!s.alive)throw new Stale();
-    const fs=ctx.sampleRate,N=SON_N,f0=17500,f1=Math.min(22000,0.45*fs);
-    if(f1-f0<1500)throw new Error('Abtastrate '+fs+' Hz zu niedrig für das Sonarband.');
-    const ref=makeChirp(N,fs,f0,f1),fft=makeFFT(N);const Rre=Float64Array.from(ref),Rim=new Float64Array(N);fft(Rre,Rim,false);
-    {const k0=Math.floor(f0/fs*N),k1=Math.ceil(f1/fs*N);for(let k=0;k<N;k++){let w=0;if(k>=k0&&k<=k1)w=0.5-0.5*Math.cos(2*Math.PI*(k-k0)/(k1-k0));Rre[k]*=w;Rim[k]*=w}}// Nebenzipfel der Korrelation senken
+    const fs=ctx.sampleRate,N=SON_N,fft=makeFFT(N);
+    const bands=SON_BANDS.map(b=>({f0:b.f0,f1:Math.min(b.f1,0.45*fs),gain:b.gain,name:b.name})).filter(b=>b.f1-b.f0>=1500);
+    if(!bands.length)throw new Error('Abtastrate '+fs+' Hz zu niedrig für das Sonar.');
+    const B0=bandRef(N,fs,bands[0],fft),ref=B0.ref,Rre=B0.Rre,Rim=B0.Rim,f0=bands[0].f0,f1=bands[0].f1;
     const dmax=Math.ceil(SON_MAXR*2*fs/C_SOUND),NB=Math.ceil(dmax/SON_BIN);
-    const st={s,fs,N,f0,f1,ref,fft,Rre,Rim,dmax,NB,gain:0.8,cal:null,calN:0,calAcc:new Float64Array(N),calStart:performance.now(),calTries:0,calCount:0,
+    const st={s,fs,N,f0,f1,ref,fft,Rre,Rim,dmax,NB,gain:bands[0].gain,bands,bandIdx:0,bandRes:[],bandStart:performance.now(),pIn:0,pRef:0,pN:0,cal:null,calN:0,calAcc:new Float64Array(N),calStart:performance.now(),calTries:0,calCount:0,
       emaRe:new Float64Array(dmax),emaIm:new Float64Array(dmax),emaInit:false,E:new Float64Array(NB),Sm:new Float64Array(NB),noise:0,motionLevel:0,
       target:{auto:true,bin:-1,tau:-1,since:0,cand:-1,candSince:0,lost:false,lowSince:0},ser:{re:[],im:[],t:[]},serBreak:'Start',
       lastSeq:-1,lastBlockAt:performance.now(),gaps:0,clips:0,blocks:0,invalid:0,tauShift:0,weak:0,lastInvalid:'',
@@ -419,6 +428,7 @@ function sonarBlock(st,d){
   st.blocks++;
   const N=st.N,re=new Float64Array(N),im=new Float64Array(N),x=d.data;for(let i=0;i<N;i++)re[i]=x[i];
   st.fft(re,im,false);
+  if(!st.cal){const bp=(lo,hi)=>{let s=0,n=0;for(let k=Math.floor(lo/st.fs*N);k<=Math.ceil(hi/st.fs*N);k++){s+=re[k]*re[k]+im[k]*im[k];n++}return s/Math.max(1,n)};st.pIn+=bp(st.f0,st.f1);st.pRef+=bp(st.f0-3000,st.f0-1500);st.pN++}
   for(let k=0;k<N;k++){const a=re[k],b=im[k],rr=st.Rre[k],ri=st.Rim[k];const w=(k===0||k===N/2)?1:(k<N/2?2:0);re[k]=(a*rr+b*ri)*w;im[k]=(b*rr-a*ri)*w}
   st.fft(re,im,true);
   if(!st.cal){sonarCalibrate(st,re,im);return}
@@ -428,13 +438,18 @@ function sonarCalibrate(st,re,im){const N=st.N;for(let i=0;i<N;i++)st.calAcc[i]+
   const need=Math.round(1.5*st.fs/N);if(st.calN<need)return;
   const m=Array.from(st.calAcc,v=>v/st.calN);let pk=0,t0=0;for(let i=0;i<N;i++)if(m[i]>pk){pk=m[i];t0=i}const med=median(m);const snr=pk/(med||1e-12);
   if(snr<8){st.calTries++;st.calN=0;st.calAcc.fill(0);
-    if(performance.now()-st.calStart>6000)setState('s','unzureichend','Eigener Sendeton nicht gefunden (Verhältnis '+nf(snr,1)+', nötig 8). Lautstärke voll? Stummschalter aus? Lautsprecher und Mikrofon frei? Keine Kopfhörer oder Bluetooth?');
+    if(performance.now()-st.bandStart>3000){const b=st.bands[st.bandIdx];const lvl=st.pN?10*Math.log10((st.pIn/st.pN)/((st.pRef/st.pN)||1e-20)):NaN;
+      st.bandRes[st.bandIdx]={band:b.name,snr,lvl};logEvent('Sonar','Selbsttest '+b.name+': Eigener Ton nicht gefunden (Verhältnis '+nf(snr,1)+', Pegel im Band '+(isFinite(lvl)?(lvl>=0?'+':'')+nf(lvl,0)+' dB':'?')+' ggü. Nachbarband)','');
+      const next=(st.bandIdx+1)%st.bands.length;
+      if(next===0){setState('s','unzureichend','Eigener Ton in keinem Band gefunden. '+sonarHint(st)+' Neuer Versuch läuft …')}
+      else setState('s','kalibrierung','Band '+b.name+' erfolglos – teste '+st.bands[next].name+(st.bands[next].f0<16000?' (hörbar)':'')+' …');
+      setBand(st,next)}
     sonarDiag(st);return}
   let ne=0;while(ne<st.dmax&&m[(t0+ne)%N]>pk*0.1)ne++;
   st.calCount++;st.cal={tau0:t0,peak:pk,snr,near:ne,nearR:ne*C_SOUND/(2*st.fs),id:'auto-direktpfad-'+st.s.id+'-'+st.calCount,t:new Date().toISOString(),validated:false,gain:st.gain};
   st.emaInit=false;st.E.fill(0);st.target.bin=-1;st.target.tau=-1;st.tauShift=0;st.weak=0;breakSeries(st,'Kalibrierung');
   setState('s','laeuft','Kalibriert. Nahbereich bis ≈ '+nf(st.cal.nearR,2)+' m nicht erfasst. Entfernungen nicht validiert.');
-  logEvent('Sonar','Selbsttest bestanden: Direktpfad gefunden (Verhältnis '+nf(snr,0)+'), Nahbereich bis ≈ '+nf(st.cal.nearR,2)+' m nicht erfasst','Kalibrierung '+st.cal.id);sonarDiag(st)}
+  logEvent('Sonar','Selbsttest bestanden im Band '+st.bands[st.bandIdx].name+': Direktpfad gefunden (Verhältnis '+nf(snr,0)+'), Nahbereich bis ≈ '+nf(st.cal.nearR,2)+' m nicht erfasst','Kalibrierung '+st.cal.id);sonarDiag(st)}
 function sonarProcess(st,re,im,d){
   const N=st.N,cal=st.cal,dmax=st.dmax,NB=st.NB,BIN=SON_BIN;
   // Direktpfad überwachen (Zeitbasis, Verdeckung)
@@ -523,7 +538,7 @@ $('sRangeCv').addEventListener('click',ev=>{const st=SON;if(!st||!st.cal||!S.cur
   $('sRangeTxt').textContent='Ziel manuell bei ≈ '+nf(binRange(st,T.tau),2)+' m. „Ziel: automatisch“ hebt die Auswahl auf.'});
 $('sAuto').onclick=()=>{const st=SON;if(!st)return;st.target.auto=true;st.target.bin=-1;st.target.tau=-1;st.target.lost=false;breakSeries(st,'Automatische Zielwahl');$('sRangeTxt').textContent='Automatische Zielwahl: stärkstes bewegtes Echo.'};
 function sonarDiag(st){const c=st.cal;diag('sDiag',Object.assign({'Sitzung':st.s.id,'Softwarestand':VERSION,'Audio-Abtastrate':st.fs+' Hz','Chirp':nf(st.f0/1000,1)+'–'+nf(st.f1/1000,1)+' kHz, '+st.N+' Samples ('+nf(st.N/st.fs*1000,1)+' ms)','Sendepegel':nf(st.gain,2)+' (Software, Systemlautstärke unbekannt)','Audio-Session':navigator.audioSession?navigator.audioSession.type:'nicht verfügbar',
-    'Kalibrierung':c?c.id+' (nicht validiert)':'läuft','Direktpfad':c?'Verzögerung '+c.tau0+' Samples, Verhältnis '+nf(c.snr,0):'–','Nahbereich nicht erfasst':c?'bis ≈ '+nf(c.nearR,2)+' m':'–',
+    'Sendeband':st.bands[st.bandIdx].name+(st.f0<16000?' (hörbar)':''),'Bandtests':st.bandRes.filter(Boolean).map(x=>x.band+': '+nf(x.snr,1)+' / '+(isFinite(x.lvl)?nf(x.lvl,0)+' dB':'?')).join(' · ')||'–','Kalibrierung':c?c.id+' (nicht validiert)':'läuft','Direktpfad':c?'Verzögerung '+c.tau0+' Samples, Verhältnis '+nf(c.snr,0):'–','Nahbereich nicht erfasst':c?'bis ≈ '+nf(c.nearR,2)+' m':'–',
     'Gültige Blöcke':st.blocks,'Verworfene Blöcke':st.invalid+(st.lastInvalid?' (zuletzt: '+st.lastInvalid+')':''),'Lücken / Übersteuerung':st.gaps+' / '+st.clips,'Bewegungssensor':st.motion?(st.motion.fresh()?'liefert Daten ('+st.motion.src+')':'keine Daten – Telefonbewegung unbekannt'):st.mstat},st.info))}
 function recordBlock(st,d){const r=st.rec;if(r.blocks.length>=r.limit){r.on=false;$('sRec').textContent='Rohdaten aufzeichnen';$('sRec').classList.remove('on');$('sRecHint').textContent='Grenze von 120 s erreicht – Aufzeichnung kontrolliert beendet. Export möglich.';return}
   r.blocks.push({seq:d.seq,frame:d.frame,clip:d.clip,gap:d.gap,data:d.data.slice()})}
