@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Raumsicht</title>
+<style>
+:root{--bg:#070C16;--surface:rgba(24,36,54,.8);--line:rgba(120,150,190,.22);--text:#F3EFE7;--muted:#93A3B8;--amber:#FFB020;--teal:#35E0C8;--red:#FF5A5F;--blue:#5B98FF;
+  --fd:"Barlow Semi Condensed","SF Pro Display",system-ui,sans-serif;--fb:-apple-system,system-ui,sans-serif;color-scheme:dark}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:#070C16;color:var(--text);font-family:var(--fb);font-size:17px;line-height:1.35;padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
+header{display:flex;justify-content:space-between;align-items:flex-end;padding:14px 16px 6px}
+h1{font-family:var(--fd);font-weight:700;font-size:26px;margin:0;color:#FFE2A6;line-height:1}
+h1 small{display:block;font-family:var(--fb);font-size:13px;font-weight:500;color:var(--muted);margin-top:3px}
+header a{color:var(--muted);font-size:14px}
+main{padding:0 16px 32px}
+.view{position:relative;width:100%;aspect-ratio:3/4;max-height:62vh;margin:0 auto;border-radius:18px;overflow:hidden;background:#000;border:1px solid var(--line)}
+.view video,.view canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+#depth{image-rendering:auto;opacity:.75}
+.view .badge{position:absolute;left:10px;top:10px;font-size:12px;background:rgba(7,12,22,.75);padding:4px 8px;border-radius:8px;color:var(--muted);font-variant-numeric:tabular-nums}
+.view .msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;color:var(--muted);font-size:15px}
+.zones{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:10px;height:56px;align-items:end}
+.zones i{display:block;background:var(--teal);border-radius:4px 4px 0 0;height:4%;transition:height .12s}
+.zones i.near{background:var(--amber)}.zones i.vnear{background:var(--red)}
+.zl{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:2px}
+.state{text-align:center;font-family:var(--fd);font-weight:600;font-size:22px;margin:12px 0 2px;min-height:28px}
+.state.bad{color:var(--red)}.state.live{color:var(--amber)}.state.good{color:var(--teal)}
+.detail{text-align:center;font-size:14px;color:var(--muted);min-height:1.3em}
+.go{display:block;width:100%;min-height:62px;margin-top:12px;border:0;border-radius:18px;background:linear-gradient(180deg,#FFC14D,#F49E00);color:#1A1200;font-family:var(--fd);font-weight:700;font-size:22px}
+.go.stop{background:rgba(33,48,70,.85);color:var(--text);border:1px solid var(--line)}
+.row{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.sec{flex:1;min-width:30%;min-height:50px;border-radius:14px;border:1px solid var(--line);background:rgba(33,48,70,.7);color:var(--text);font-family:var(--fd);font-weight:600;font-size:16px}
+.sec[aria-pressed="true"]{border-color:var(--amber);color:var(--amber)}
+.go:focus-visible,.sec:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
+.prog{height:6px;border-radius:3px;background:rgba(120,150,190,.18);overflow:hidden;margin-top:8px;display:none}
+.prog i{display:block;height:100%;width:0;background:var(--amber)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:12px 14px;margin-top:14px;font-size:14px;color:var(--muted)}
+.card b{color:var(--text)}
+.card ul{margin:6px 0 0;padding-left:18px}
+</style>
+</head>
+<body>
+<header><h1>Raumsicht<small>Kamera-Tiefe als Raumklang · Forschungsdemo</small></h1><a href="./">Lagebild Lite</a></header>
+<main>
+  <div class="view" id="view">
+    <video id="vid" playsinline muted autoplay></video>
+    <canvas id="depth"></canvas>
+    <div class="badge" id="badge">–</div>
+    <div class="msg" id="msg">Kopfhörer aufsetzen (am besten AirPods), dann starten. Beim ersten Start wird ein KI-Modell geladen (ca. 25–50 MB, danach im Browser zwischengespeichert).</div>
+  </div>
+  <div class="zones" id="zones" aria-hidden="true"></div>
+  <div class="zl" aria-hidden="true"><span>links</span><span>Mitte</span><span>rechts</span></div>
+  <div class="state" id="state" role="status" aria-live="polite">Bereit</div>
+  <div class="detail" id="detail"></div>
+  <div class="prog" id="prog"><i></i></div>
+  <button class="go" id="go">Raumsicht starten</button>
+  <div class="row">
+    <button class="sec" id="mScan" aria-pressed="true">Klang: Scanner</button>
+    <button class="sec" id="mWarn" aria-pressed="true">Nah-Warnung</button>
+    <button class="sec" id="say">Ansage</button>
+  </div>
+  <div class="row">
+    <button class="sec" id="vMix" aria-pressed="true">Bild: Mischung</button>
+    <button class="sec" id="vDepth" aria-pressed="false">Bild: nur Tiefe</button>
+  </div>
+  <div class="card">
+    <b>So funktioniert es.</b> Ein neuronales Netz (Depth Anything V2) schätzt aus jedem Kamerabild, was näher und was weiter weg ist. Das Bild wird in sieben Richtungen von links nach rechts geteilt.
+    <ul>
+      <li><b>Scanner:</b> Jede Sekunde läuft ein Klang von links nach rechts durch den Raum. Hoch und laut heißt nah, tief und leise heißt fern. Mit Kopfhörern hörst du die Richtung.</li>
+      <li><b>Nah-Warnung:</b> Ist in der Mitte etwas deutlich näher als der Rest, tickt es. Je schneller, desto näher.</li>
+      <li><b>Ansage:</b> sagt, wo das nächste Hindernis liegt.</li>
+    </ul>
+    <p style="margin:8px 0 0"><b>Grenzen:</b> Die Tiefe ist <b>relativ</b>, keine Meter. Dunkelheit, Glas, Spiegel und einfarbige Flächen täuschen das Netz. Nur unter Aufsicht und mit Sicht testen – kein Hilfsmittel zum Gehen.</p>
+  </div>
+</main>
+
+<script type="module">
+const $=id=>document.getElementById(id);
+const MODEL_ID='onnx-community/depth-anything-v2-small';
+const COLS=7,LONG=252;
+const st={on:false,sid:0,model:null,backend:'',ctx:null,stream:null,mode:{scan:true,warn:true},view:'mix',
+  near:new Array(COLS).fill(0),norm:{lo:null,hi:null},fps:0,lastInf:0,nextScan:0,nextTick:0,w:0,h:0,test:new URLSearchParams(location.search).has('test')};
+window.__RS=st;
+
+function setState(t,c,d){const e=$('state');e.textContent=t;e.className='state'+(c?' '+c:'');$('detail').textContent=d||''}
+function prog(v){const p=$('prog');if(v==null){p.style.display='none';return}p.style.display='block';p.firstElementChild.style.width=Math.round(v*100)+'%'}
+$('zones').innerHTML='<i></i>'.repeat(COLS);
+function toggle(id,on){$(id).setAttribute('aria-pressed',on?'true':'false')}
+$('mScan').onclick=()=>{st.mode.scan=!st.mode.scan;toggle('mScan',st.mode.scan)};
+$('mWarn').onclick=()=>{st.mode.warn=!st.mode.warn;toggle('mWarn',st.mode.warn)};
+$('vMix').onclick=()=>{st.view='mix';toggle('vMix',true);toggle('vDepth',false);$('depth').style.opacity=.75};
+$('vDepth').onclick=()=>{st.view='depth';toggle('vMix',false);toggle('vDepth',true);$('depth').style.opacity=1};
+
+/* ---------- Modell laden ---------- */
+let TF=null;
+async function loadModel(sid){
+  if(st.model)return st.model;
+  setState('Lade KI-Modell …','live','Einmalig, danach aus dem Zwischenspeicher.');prog(0);
+  TF=TF||await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.6');
+  TF.env.allowLocalModels=false;
+  const files={};const cb=p=>{if(p.status==='progress'&&p.total){files[p.file]=[p.loaded,p.total];let l=0,t=0;for(const k in files){l+=files[k][0];t+=files[k][1]}prog(l/t);$('detail').textContent='Download '+(l/1048576).toFixed(0)+' von '+(t/1048576).toFixed(0)+' MB'}};
+  const tries=[];if(navigator.gpu)tries.push({device:'webgpu',dtype:'fp16'},{device:'webgpu',dtype:'fp32'});tries.push({device:'wasm',dtype:'q8'});
+  let err=null;
+  for(const o of tries){if(sid!==st.sid)throw new Error('abgebrochen');
+    try{setState('Lade KI-Modell …','live',(o.device==='webgpu'?'Grafikchip (WebGPU)':'Prozessor (WASM)')+', '+o.dtype);
+      const m=await TF.AutoModel.from_pretrained(MODEL_ID,{device:o.device,dtype:o.dtype,progress_callback:cb});
+      // Probelauf
+      const t=new TF.Tensor('float32',new Float32Array(3*14*14*4),[1,3,28,28]);await m({pixel_values:t});
+      st.model=m;st.backend=(o.device==='webgpu'?'WebGPU':'WASM')+' '+o.dtype;prog(null);return m}
+    catch(e){err=e;console.warn('Backend fehlgeschlagen',o,e)}}
+  prog(null);throw new Error('Modell konnte nicht geladen werden: '+(err&&err.message||err));
+}
+
+/* ---------- Audio ---------- */
+function audio(){if(st.ctx)return st.ctx;try{if(navigator.audioSession)navigator.audioSession.type='playback'}catch(e){}
+  const AC=window.AudioContext||window.webkitAudioContext;st.ctx=new AC();return st.ctx}
+function tone(az,freq,gain,dur,when,type){const c=st.ctx;const o=c.createOscillator(),g=c.createGain(),p=c.createPanner();
+  p.panningModel='HRTF';p.distanceModel='inverse';p.refDistance=1;const a=az*Math.PI/180;
+  if(p.positionX){p.positionX.value=Math.sin(a);p.positionY.value=0;p.positionZ.value=-Math.cos(a)}else p.setPosition(Math.sin(a),0,-Math.cos(a));
+  o.type=type||'sine';o.frequency.value=freq;g.gain.setValueAtTime(0,when);g.gain.linearRampToValueAtTime(gain,when+0.01);g.gain.exponentialRampToValueAtTime(0.0005,when+dur);
+  o.connect(g).connect(p).connect(c.destination);o.start(when);o.stop(when+dur+0.02)}
+const azOf=i=>-60+120*i/(COLS-1);
+function sonify(){if(!st.ctx||!st.on)return;const c=st.ctx,now=c.currentTime;
+  if(st.mode.scan&&now>=st.nextScan){for(let i=0;i<COLS;i++){const n=st.near[i];tone(azOf(i),260+1100*n*n,0.04+0.4*n*n,0.11,now+0.05+i*0.14,'triangle')}st.nextScan=now+COLS*0.14+0.45}
+  if(st.mode.warn){let bi=2,bv=0;for(let i=2;i<=4;i++)if(st.near[i]>bv){bv=st.near[i];bi=i}
+    if(bv>0.7&&now>=st.nextTick){tone(azOf(bi),1800,0.35,0.05,now+0.01,'square');st.nextTick=now+Math.max(0.08,0.6-(bv-0.7)/0.3*0.52)}}}
+function say(){const names=['ganz links','links','leicht links','geradeaus','leicht rechts','rechts','ganz rechts'];let bi=0;for(let i=1;i<COLS;i++)if(st.near[i]>st.near[bi])bi=i;const v=st.near[bi];
+  const txt=!st.on?'Raumsicht ist nicht gestartet.':v>0.85?'Sehr nah, '+names[bi]+'.':v>0.6?'Nah, '+names[bi]+'.':'Nichts auffällig nah. Nächstes Objekt '+names[bi]+'.';
+  try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(txt+' Relative Schätzung.');u.lang='de-DE';speechSynthesis.speak(u)}catch(e){}}
+$('say').onclick=say;
+
+/* ---------- Kamera / Testbild ---------- */
+async function camera(){if(st.test)return null;if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw new Error('Kamera nicht verfügbar – Seite direkt in Safari über HTTPS öffnen.');
+  const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:640},height:{ideal:480}},audio:false});
+  const v=$('vid');v.srcObject=s;await v.play();return s}
+function testFrame(cv,t){const c=cv.getContext('2d'),W=cv.width,H=cv.height;const g=c.createLinearGradient(0,0,0,H);g.addColorStop(0,'#556');g.addColorStop(1,'#a98');c.fillStyle=g;c.fillRect(0,0,W,H);
+  c.fillStyle='#ccb';c.fillRect(W*0.1,H*0.15,W*0.8,H*0.45);c.fillStyle='#843';const x=W*(0.5+0.35*Math.sin(t/1500));c.fillRect(x-W*0.12,H*0.3,W*0.24,H*0.6);c.fillStyle='#333';c.fillRect(W*0.7,H*0.55,W*0.25,H*0.4)}
+
+/* ---------- Inferenz ---------- */
+const pre=document.createElement('canvas');const preCtx=pre.getContext('2d',{willReadFrequently:true});
+const MEAN=[0.485,0.456,0.406],STD=[0.229,0.224,0.225];
+function half2f(h){const s=(h&0x8000)?-1:1,e=(h>>10)&0x1f,f=h&0x3ff;if(e===0)return s*Math.pow(2,-14)*(f/1024);if(e===31)return f?NaN:s*Infinity;return s*Math.pow(2,e-15)*(1+f/1024)}
+async function infer(src,sw,sh){
+  const portrait=sh>=sw;const r=portrait?sw/sh:sh/sw;const short=Math.max(14,Math.round(LONG*r/14)*14);const w=portrait?short:LONG,h=portrait?LONG:short;st.w=w;st.h=h;
+  pre.width=w;pre.height=h;preCtx.drawImage(src,0,0,w,h);const px=preCtx.getImageData(0,0,w,h).data;const n=w*h,data=new Float32Array(3*n);
+  for(let i=0,j=0;i<n;i++,j+=4){data[i]=(px[j]/255-MEAN[0])/STD[0];data[n+i]=(px[j+1]/255-MEAN[1])/STD[1];data[2*n+i]=(px[j+2]/255-MEAN[2])/STD[2]}
+  const out=await st.model({pixel_values:new TF.Tensor('float32',data,[1,3,h,w])});
+  const d=out.predicted_depth;const dims=d.dims,oh=dims[dims.length-2],ow=dims[dims.length-1];let raw=d.data;
+  if(raw instanceof Uint16Array){const f=new Float32Array(raw.length);for(let i=0;i<raw.length;i++)f[i]=half2f(raw[i]);raw=f}
+  return{v:raw,w:ow,h:oh}}
+function analyse(dm){const {v,w,h}=dm;const sample=[];for(let i=0;i<v.length;i+=7)sample.push(v[i]);sample.sort((a,b)=>a-b);
+  const lo=sample[Math.floor(sample.length*0.02)],hi=sample[Math.floor(sample.length*0.98)];const N=st.norm;
+  N.lo=N.lo==null?lo:N.lo+0.15*(lo-N.lo);N.hi=N.hi==null?hi:N.hi+0.15*(hi-N.hi);const span=(N.hi-N.lo)||1;
+  const y0=Math.floor(h*0.1),y1=Math.floor(h*0.72);
+  for(let c=0;c<COLS;c++){const x0=Math.floor(c*w/COLS),x1=Math.floor((c+1)*w/COLS);const vals=[];for(let y=y0;y<y1;y+=2)for(let x=x0;x<x1;x+=2)vals.push(v[y*w+x]);vals.sort((a,b)=>a-b);
+    const p90=vals[Math.floor(vals.length*0.9)];const n=Math.max(0,Math.min(1,(p90-N.lo)/span));st.near[c]+=0.5*(n-st.near[c])}
+  // Darstellung
+  const cv=$('depth');if(cv.width!==w||cv.height!==h){cv.width=w;cv.height=h}const c=cv.getContext('2d'),img=c.createImageData(w,h);
+  for(let i=0;i<w*h;i++){const n=Math.max(0,Math.min(1,(v[i]-N.lo)/span));const j=i*4;
+    if(n<0.5){img.data[j]=20+40*n;img.data[j+1]=40+200*n;img.data[j+2]=120+160*n}else{const t=(n-0.5)*2;img.data[j]=60+195*t;img.data[j+1]=140+36*t-100*t*t;img.data[j+2]=200-180*t}
+    img.data[j+3]=st.view==='depth'?255:Math.round(60+170*n)}
+  c.putImageData(img,0,0);
+  const bars=$('zones').children;for(let i=0;i<COLS;i++){const n=st.near[i];bars[i].style.height=Math.round(4+96*n)+'%';bars[i].className=n>0.85?'vnear':n>0.6?'near':''}}
+async function loop(sid){
+  const v=$('vid');let src,sw,sh;
+  if(st.test){const tc=loop.tc||(loop.tc=Object.assign(document.createElement('canvas'),{width:480,height:640}));testFrame(tc,performance.now());src=tc;sw=480;sh=640}
+  else{if(!v.videoWidth){requestAnimationFrame(()=>st.on&&sid===st.sid&&loop(sid));return}src=v;sw=v.videoWidth;sh=v.videoHeight}
+  const t0=performance.now();
+  try{const dm=await infer(src,sw,sh);if(!st.on||sid!==st.sid)return;analyse(dm)}catch(e){if(st.on&&sid===st.sid){stop('Fehler bei der Auswertung: '+e.message,true)}return}
+  const dt=performance.now()-t0;st.fps=st.fps?st.fps*0.8+0.2*(1000/dt):1000/dt;
+  $('badge').textContent=st.backend+' · '+st.fps.toFixed(1)+' Bilder/s · '+st.w+'×'+st.h+(st.test?' · Testbild':'');
+  const mx=Math.max(...st.near.slice(2,5));setState(mx>0.85?'Sehr nah in der Mitte':mx>0.6?'Nah in der Mitte':'Kein naher Bereich in der Mitte',mx>0.85?'bad':mx>0.6?'live':'good','Relative Schätzung, keine Meter.');
+  sonify();requestAnimationFrame(()=>st.on&&sid===st.sid&&loop(sid))}
+setInterval(()=>{if(st.on)sonify()},60);
+
+/* ---------- Start / Stop ---------- */
+function stop(reason,bad){st.on=false;st.sid++;if(st.stream){st.stream.getTracks().forEach(t=>t.stop());st.stream=null}$('vid').srcObject=null;
+  if(st.ctx){try{st.ctx.close()}catch(e){}st.ctx=null}try{speechSynthesis.cancel()}catch(e){}
+  $('go').textContent='Raumsicht starten';$('go').classList.remove('stop');st.near.fill(0);[...$('zones').children].forEach(b=>{b.style.height='4%';b.className=''});
+  const c=$('depth');c.getContext('2d').clearRect(0,0,c.width,c.height);$('badge').textContent='–';setState(bad?'Unterbrochen':'Beendet',bad?'bad':'',reason||'')}
+$('go').onclick=async()=>{if(st.on||$('go').classList.contains('stop')){stop('Beendet.');return}
+  const sid=++st.sid;audio();try{st.ctx.resume()}catch(e){}
+  $('go').textContent='Abbrechen';$('go').classList.add('stop');$('msg').style.display='none';
+  try{if(!window.isSecureContext)throw new Error('Seite muss über HTTPS geöffnet werden.');
+    setState('Kamera freigeben …','live','');const s=await camera();if(sid!==st.sid){s&&s.getTracks().forEach(t=>t.stop());return}st.stream=s;
+    if(s)s.getVideoTracks()[0].onended=()=>{if(st.on)stop('Kamera wurde beendet.',true)};
+    await loadModel(sid);if(sid!==st.sid)return;
+    st.on=true;st.norm={lo:null,hi:null};st.nextScan=0;st.nextTick=0;$('go').textContent='Raumsicht beenden';
+    setState('Läuft','good','Handy langsam schwenken und zuhören.');loop(sid)}
+  catch(e){if(sid!==st.sid)return;const n=e&&e.name;stop(n==='NotAllowedError'?'Kamera-Zugriff verweigert. In Safari: „aA“ → Website-Einstellungen → Kamera erlauben.':(e.message||String(e)),true)}};
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&(st.on||$('go').classList.contains('stop')))stop('Seite war im Hintergrund. Bitte neu starten.',true)});
+if(st.test){$('msg').textContent='Testmodus: synthetisches Bild statt Kamera.'}
+</script>
+</body>
+</html>
