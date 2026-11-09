@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Raumkarte</title>
+<style>
+:root{--line:rgba(120,150,190,.22);--text:#F3EFE7;--muted:#93A3B8;--amber:#FFB020;--teal:#35E0C8;--red:#FF5A5F;--blue:#5B98FF;
+  --fd:"Barlow Semi Condensed","SF Pro Display",system-ui,sans-serif;--fb:-apple-system,system-ui,sans-serif;color-scheme:dark}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:#070C16;color:var(--text);font-family:var(--fb);font-size:17px;line-height:1.35;padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
+header{display:flex;justify-content:space-between;align-items:flex-end;padding:14px 16px 6px}
+h1{font-family:var(--fd);font-weight:700;font-size:26px;margin:0;color:#FFE2A6;line-height:1}
+h1 small{display:block;font-family:var(--fb);font-size:13px;font-weight:500;color:var(--muted);margin-top:3px}
+header a{color:var(--muted);font-size:14px}
+main{padding:0 16px 32px}
+.view{position:relative;width:100%;aspect-ratio:1/1;max-height:64vh;border-radius:18px;overflow:hidden;background:#05080F;border:1px solid var(--line);touch-action:none}
+.view canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.badge{position:absolute;left:10px;top:10px;font-size:12px;background:rgba(7,12,22,.8);padding:4px 8px;border-radius:8px;color:var(--muted);font-variant-numeric:tabular-nums;pointer-events:none}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:8px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+.state{text-align:center;font-family:var(--fd);font-weight:600;font-size:22px;margin:12px 0 2px;min-height:28px}
+.state.bad{color:var(--red)}.state.live{color:var(--amber)}.state.good{color:var(--teal)}
+.detail{text-align:center;font-size:14px;color:var(--muted);min-height:1.3em}
+.go{display:block;width:100%;min-height:62px;margin-top:12px;border:0;border-radius:18px;background:linear-gradient(180deg,#FFC14D,#F49E00);color:#1A1200;font-family:var(--fd);font-weight:700;font-size:22px}
+.go.stop{background:rgba(33,48,70,.85);color:var(--text);border:1px solid var(--line)}
+.row{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.sec{flex:1;min-width:30%;min-height:50px;border-radius:14px;border:1px solid var(--line);background:rgba(33,48,70,.7);color:var(--text);font-family:var(--fd);font-weight:600;font-size:16px}
+.sec[aria-pressed="true"]{border-color:var(--amber);color:var(--amber)}
+.go:focus-visible,.sec:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.stats div{background:rgba(24,36,54,.8);border:1px solid var(--line);border-radius:14px;padding:10px 12px}
+.stats b{display:block;font-family:var(--fd);font-size:24px;font-variant-numeric:tabular-nums}
+.stats span{font-size:12px;color:var(--muted)}
+.card{background:rgba(24,36,54,.8);border:1px solid var(--line);border-radius:16px;padding:12px 14px;margin-top:14px;font-size:14px;color:var(--muted)}
+.card b{color:var(--text)}
+</style>
+</head>
+<body>
+<header><h1>Raumkarte<small>Eigene LiDAR-Kartierung · Forschungsdemo</small></h1><span><a href="raumsicht.html">Raumsicht</a> · <a href="./">Lagebild</a></span></header>
+<main>
+  <div class="view" id="view"><canvas id="c2d"></canvas><canvas id="c3d" style="display:none"></canvas><div class="badge" id="badge">–</div></div>
+  <div class="legend"><span><i style="background:#0E5A5A"></i>Boden</span><span><i style="background:#FFB020"></i>Gegenstand bis 1 m</span><span><i style="background:#E8E2D6"></i>Wand / hoch</span><span><i style="background:#5B98FF"></i>Weg</span><span><i style="background:#FF5A5F"></i>Handy</span></div>
+  <div class="state" id="state" role="status" aria-live="polite">Bereit</div>
+  <div class="detail" id="detail"></div>
+  <button class="go" id="go">Kartierung starten</button>
+  <div class="row">
+    <button class="sec" id="v2d" aria-pressed="true">Grundriss</button>
+    <button class="sec" id="v3d" aria-pressed="false">3D-Punktwolke</button>
+  </div>
+  <div class="row">
+    <button class="sec" id="follow" aria-pressed="true">Mitführen</button>
+    <button class="sec" id="exp">Export (PLY)</button>
+    <button class="sec" id="clear">Karte leeren</button>
+  </div>
+  <div class="stats">
+    <div><b id="sFloor">–</b><span>Erfasste Bodenfläche</span></div>
+    <div><b id="sSize">–</b><span>Ausdehnung (Wände/Hohes)</span></div>
+    <div><b id="sPts">–</b><span>Messwürfel à 5 cm</span></div>
+    <div><b id="sWay">–</b><span>Zurückgelegter Weg</span></div>
+  </div>
+  <div class="card">
+    <b>So funktioniert es.</b> Jeder LiDAR-Messpunkt wird mit der aktuellen Handyposition in feste Raumkoordinaten umgerechnet und als 5-cm-Würfel gespeichert. Beim langsamen Gehen und Schwenken wächst so eine eigene Karte des Raums – ohne Raumpläne, Markierungen oder Messpunkte. Die Farbe zeigt die Höhe über dem Boden.
+    <p style="margin:8px 0 0"><b>Tipps:</b> Handy zuerst kurz zum Boden neigen (Bodenerkennung), dann langsam die Wände entlang schwenken. Reichweite etwa 5 m. Glas, Spiegel und schwarze Flächen liefern wenig Punkte. Nicht erfasste Bereiche bleiben leer – sie sind <b>unbekannt</b>, nicht frei.</p>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(function(){'use strict';
+const $=id=>document.getElementById(id);
+const NATIVE=window.LagebildNative||null;
+const VS=0.05;
+const M={on:false,keys:new Set(),pts:[],cells:new Map(),floorY:null,path:[],pose:null,way:0,view:'2d',follow:true,demo:false,lastRender:0,fps:[],dirty3d:false};
+window.__RK=M;
+function setState(t,c,d){const e=$('state');e.textContent=t;e.className='state'+(c?' '+c:'');$('detail').textContent=d||''}
+const fmtM=v=>v.toFixed(1).replace('.',',')+' m';
+
+/* ---------- Daten aufnehmen ---------- */
+function addVoxel(ix,iy,iz){const k=ix+','+iy+','+iz;if(M.keys.has(k))return;M.keys.add(k);M.pts.push(ix,iy,iz);
+  const ck=ix*100003+iz;const y=iy*VS;const c=M.cells.get(ck);if(!c)M.cells.set(ck,{ix,iz,min:y,max:y,n:1});else{if(y<c.min)c.min=y;if(y>c.max)c.max=y;c.n++}M.dirty3d=true}
+function b64(s,T){const b=atob(s),u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return new T(u.buffer)}
+function onFrame(f){if(!M.on)return;
+  if(f.vox){const a=b64(f.vox,Int16Array);for(let i=0;i+2<a.length;i+=3)addVoxel(a[i],a[i+1],a[i+2])}
+  if(typeof f.floorY==='number')M.floorY=f.floorY;
+  if(f.pose){const p={x:f.pose[0],y:f.pose[1],z:f.pose[2],fx:f.pose[3],fz:f.pose[4]};const last=M.path[M.path.length-1];
+    if(!last||Math.hypot(p.x-last.x,p.z-last.z)>0.1){if(last)M.way+=Math.hypot(p.x-last.x,p.z-last.z);M.path.push(p)}M.pose=p}
+  const now=performance.now();M.fps.push(now);while(M.fps.length&&M.fps[0]<now-2000)M.fps.shift();
+  $('badge').textContent='LiDAR · '+(M.fps.length/2).toFixed(0)+' Bilder/s · Tracking: '+f.tracking+' · Boden '+(M.floorY!=null?'erkannt':'nicht erkannt');
+  if(f.tracking!=='normal')setState('Tracking eingeschränkt','live','Langsamer bewegen, mehr Licht oder strukturierte Flächen anvisieren. In dieser Zeit wird nichts in die Karte eingetragen.');
+  else if(M.floorY==null)setState('Kartierung läuft','live','Boden noch nicht erkannt – Handy kurz Richtung Boden neigen. Höhenfarben folgen danach.');
+  else setState('Kartierung läuft','good','Langsam gehen und die Wände entlang schwenken.');
+  if(f.nvox>=399000)setState('Speichergrenze erreicht','bad','Karte exportieren oder leeren.');
+  render()}
+
+/* ---------- Grundriss ---------- */
+const c2=$('c2d');let view2={cx:0,cz:0,scale:60};
+function heightOf(c){const f=M.floorY!=null?M.floorY:(M.lowY!=null?M.lowY:null);return f==null?null:c.max-f}
+function render(force){const now=performance.now();if(!force&&now-M.lastRender<200)return;M.lastRender=now;
+  stats();if(M.view==='3d'){render3d();return}
+  const dpr=Math.min(2,window.devicePixelRatio||1),W=c2.clientWidth*dpr,H=c2.clientHeight*dpr;if(c2.width!==W||c2.height!==H){c2.width=W;c2.height=H}
+  const c=c2.getContext('2d');c.fillStyle='#05080F';c.fillRect(0,0,W,H);
+  if(M.cells.size){let x0=1e9,x1=-1e9,z0=1e9,z1=-1e9;for(const k of M.cells.values()){if(k.ix<x0)x0=k.ix;if(k.ix>x1)x1=k.ix;if(k.iz<z0)z0=k.iz;if(k.iz>z1)z1=k.iz}
+    const spanX=(x1-x0+1)*VS,spanZ=(z1-z0+1)*VS;const fit=Math.min(W/(spanX+1),H/(spanZ+1));
+    if(M.follow){view2.scale=Math.min(fit,160*dpr);view2.cx=(x0+x1+1)/2*VS;view2.cz=(z0+z1+1)/2*VS}}
+  const s=view2.scale,ox=W/2-view2.cx*s,oz=H/2-view2.cz*s,px=Math.max(1,VS*s+0.5);
+  // Raster 1 m
+  c.strokeStyle='rgba(120,150,190,.10)';c.lineWidth=1;const gx0=Math.floor(-ox/s),gx1=Math.ceil((W-ox)/s),gz0=Math.floor(-oz/s),gz1=Math.ceil((H-oz)/s);
+  c.beginPath();for(let g=gx0;g<=gx1;g++){c.moveTo(ox+g*s,0);c.lineTo(ox+g*s,H)}for(let g=gz0;g<=gz1;g++){c.moveTo(0,oz+g*s);c.lineTo(W,oz+g*s)}c.stroke();
+  // Zellen: zuerst Boden, dann Gegenstände, dann Wände
+  const layers=[[],[],[]];for(const k of M.cells.values()){const h=heightOf(k);const L=h==null?(k.max-k.min>0.8?2:1):h<0.06?0:h<1.0?1:2;layers[L].push(k)}
+  const cols=['#0E5A5A','#FFB020','#E8E2D6'];for(let L=0;L<3;L++){c.fillStyle=cols[L];for(const k of layers[L])c.fillRect(ox+k.ix*VS*s,oz+k.iz*VS*s,px,px)}
+  // Weg
+  if(M.path.length>1){c.strokeStyle='#5B98FF';c.lineWidth=2*dpr;c.beginPath();M.path.forEach((p,i)=>{const X=ox+p.x*s,Z=oz+p.z*s;i?c.lineTo(X,Z):c.moveTo(X,Z)});c.stroke()}
+  // Handy
+  if(M.pose){const X=ox+M.pose.x*s,Z=oz+M.pose.z*s,n=Math.hypot(M.pose.fx,M.pose.fz)||1,fx=M.pose.fx/n,fz=M.pose.fz/n,L=18*dpr;
+    c.fillStyle='rgba(255,90,95,.18)';c.beginPath();c.moveTo(X,Z);const a=Math.atan2(fz,fx);c.arc(X,Z,L*3,a-0.5,a+0.5);c.closePath();c.fill();
+    c.fillStyle='#FF5A5F';c.beginPath();c.moveTo(X+fx*L,Z+fz*L);c.lineTo(X-fz*L*0.45,Z+fx*L*0.45);c.lineTo(X+fz*L*0.45,Z-fx*L*0.45);c.closePath();c.fill()}
+  // Maßstab
+  c.fillStyle='#93A3B8';c.font=(12*dpr)+'px system-ui';c.fillRect(12*dpr,H-16*dpr,s,3*dpr);c.fillText('1 m',12*dpr,H-22*dpr)}
+function stats(){let floor=0,x0=1e9,x1=-1e9,z0=1e9,z1=-1e9,walls=0;for(const k of M.cells.values()){const h=heightOf(k);if(h!=null&&h<0.06)floor++;if(h!=null&&h>=1.0){walls++;if(k.ix<x0)x0=k.ix;if(k.ix>x1)x1=k.ix;if(k.iz<z0)z0=k.iz;if(k.iz>z1)z1=k.iz}}
+  $('sFloor').textContent=M.floorY!=null||M.demo?(floor*VS*VS).toFixed(1).replace('.',',')+' m²':'–';
+  $('sSize').textContent=walls?fmtM((x1-x0+1)*VS)+' × '+fmtM((z1-z0+1)*VS):'–';
+  $('sPts').textContent=(M.pts.length/3).toLocaleString('de-DE');$('sWay').textContent=M.way?fmtM(M.way):'–'}
+// Verschieben und Zoomen im Grundriss
+let drag=null,pinch=null;c2.addEventListener('pointerdown',e=>{drag={x:e.clientX,y:e.clientY};c2.setPointerCapture(e.pointerId)});
+c2.addEventListener('pointermove',e=>{if(!drag||pinch)return;const dpr=Math.min(2,window.devicePixelRatio||1);view2.cx-=(e.clientX-drag.x)*dpr/view2.scale;view2.cz-=(e.clientY-drag.y)*dpr/view2.scale;drag={x:e.clientX,y:e.clientY};setFollow(false);render(true)});
+c2.addEventListener('pointerup',()=>{drag=null});
+c2.addEventListener('wheel',e=>{e.preventDefault();view2.scale*=e.deltaY<0?1.15:1/1.15;setFollow(false);render(true)},{passive:false});
+c2.addEventListener('touchstart',e=>{if(e.touches.length===2){pinch={d:Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY),s:view2.scale}}},{passive:true});
+c2.addEventListener('touchmove',e=>{if(pinch&&e.touches.length===2){const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);view2.scale=pinch.s*d/pinch.d;setFollow(false);render(true)}},{passive:true});
+c2.addEventListener('touchend',()=>{pinch=null});
+
+/* ---------- 3D-Punktwolke ---------- */
+let T3=null;
+function init3d(){if(T3||!window.THREE)return;const cv=$('c3d');const r=new THREE.WebGLRenderer({canvas:cv,antialias:true});r.setPixelRatio(Math.min(2,window.devicePixelRatio||1));r.setClearColor(0x05080f);
+  const sc=new THREE.Scene(),cam=new THREE.PerspectiveCamera(55,1,0.05,200);cam.position.set(4,5,6);
+  const ctl=THREE.OrbitControls?new THREE.OrbitControls(cam,cv):null;if(ctl){ctl.enableDamping=true;ctl.addEventListener('change',()=>r.render(sc,cam))}
+  const MAX=400000,pos=new Float32Array(MAX*3),col=new Float32Array(MAX*3);const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(pos,3));g.setAttribute('color',new THREE.BufferAttribute(col,3));g.setDrawRange(0,0);
+  const pts=new THREE.Points(g,new THREE.PointsMaterial({size:0.045,vertexColors:true}));sc.add(pts);sc.add(new THREE.GridHelper(20,20,0x2a3a52,0x16202e));
+  const arrow=new THREE.Mesh(new THREE.ConeGeometry(0.08,0.25,12),new THREE.MeshBasicMaterial({color:0xff5a5f}));sc.add(arrow);
+  T3={r,sc,cam,ctl,g,pos,col,n:0,arrow,MAX,centered:false};
+  (function loop(){requestAnimationFrame(loop);if(M.view==='3d'&&T3.ctl){T3.ctl.update();T3.r.render(T3.sc,T3.cam)}})()}
+function colorFor(y){const f=M.floorY!=null?M.floorY:null;const h=f==null?0.5:y-f;if(h<0.06)return[0.05,0.35,0.35];if(h<1.0)return[1,0.69,0.13];return[0.91,0.89,0.84]}
+function render3d(){init3d();if(!T3){$('detail').textContent='3D-Ansicht konnte nicht geladen werden (keine Verbindung zum Grafikmodul).';return}
+  const cv=$('c3d'),W=cv.clientWidth,H=cv.clientHeight;T3.r.setSize(W,H,false);T3.cam.aspect=W/H;T3.cam.updateProjectionMatrix();
+  const n=Math.min(M.pts.length/3,T3.MAX);const fY=M.floorY!=null?M.floorY:0;
+  if(M.dirty3d){for(let i=0;i<n;i++){const x=M.pts[i*3]*VS,y=M.pts[i*3+1]*VS,z=M.pts[i*3+2]*VS;T3.pos[i*3]=x;T3.pos[i*3+1]=y-fY;T3.pos[i*3+2]=z;const c=colorFor(y);T3.col[i*3]=c[0];T3.col[i*3+1]=c[1];T3.col[i*3+2]=c[2]}
+    T3.g.setDrawRange(0,n);T3.g.attributes.position.needsUpdate=true;T3.g.attributes.color.needsUpdate=true;M.dirty3d=false;
+    if(!T3.centered&&n>500&&T3.ctl){let sx=0,sz=0;for(let i=0;i<n;i++){sx+=T3.pos[i*3];sz+=T3.pos[i*3+2]}T3.ctl.target.set(sx/n,0.8,sz/n);T3.cam.position.set(sx/n+4,4.5,sz/n+5);T3.centered=true}}
+  if(M.pose){T3.arrow.position.set(M.pose.x,M.pose.y-fY,M.pose.z);T3.arrow.rotation.set(0,0,0);T3.arrow.lookAt(M.pose.x+M.pose.fx,M.pose.y-fY,M.pose.z+M.pose.fz);T3.arrow.rotateX(Math.PI/2)}
+  T3.r.render(T3.sc,T3.cam)}
+
+/* ---------- Bedienung ---------- */
+function setFollow(on){M.follow=on;$('follow').setAttribute('aria-pressed',on?'true':'false')}
+$('follow').onclick=()=>{setFollow(!M.follow);render(true)};
+$('v2d').onclick=()=>{M.view='2d';$('c2d').style.display='';$('c3d').style.display='none';$('v2d').setAttribute('aria-pressed','true');$('v3d').setAttribute('aria-pressed','false');render(true)};
+$('v3d').onclick=()=>{M.view='3d';$('c2d').style.display='none';$('c3d').style.display='';$('v2d').setAttribute('aria-pressed','false');$('v3d').setAttribute('aria-pressed','true');M.dirty3d=true;render(true)};
+$('clear').onclick=()=>{M.keys.clear();M.pts=[];M.cells.clear();M.path=[];M.way=0;M.dirty3d=true;if(T3)T3.centered=false;render(true)};
+$('exp').onclick=()=>{const n=M.pts.length/3;if(!n){$('detail').textContent='Noch keine Punkte.';return}const fY=M.floorY!=null?M.floorY:0;
+  let s='ply\nformat ascii 1.0\ncomment Lagebild Raumkarte, Meter, y = Höhe über Boden\nelement vertex '+n+'\nproperty float x\nproperty float y\nproperty float z\nproperty uchar red\nproperty uchar green\nproperty uchar blue\nend_header\n';
+  const parts=[s];for(let i=0;i<n;i++){const x=M.pts[i*3]*VS,y=M.pts[i*3+1]*VS,z=M.pts[i*3+2]*VS;const c=colorFor(y);parts.push(x.toFixed(3)+' '+(y-fY).toFixed(3)+' '+z.toFixed(3)+' '+Math.round(c[0]*255)+' '+Math.round(c[1]*255)+' '+Math.round(c[2]*255)+'\n')}
+  const blob=new Blob(parts,{type:'application/octet-stream'}),name='raumkarte-'+new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')+'.ply';
+  const file=new File([blob],name,{type:'application/octet-stream'});
+  if(navigator.canShare&&navigator.canShare({files:[file]})){navigator.share({files:[file]}).catch(()=>{})}else{const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click()}};
+function stop(msg){M.on=false;if(NATIVE){try{NATIVE.post({cmd:'depthStop'});NATIVE.on.depth=null}catch(e){}}$('go').textContent=M.cells.size?'Kartierung fortsetzen':'Kartierung starten';$('go').classList.remove('stop');setState('Angehalten','',msg||'Die Karte bleibt erhalten. Fortsetzen ergänzt sie – solange die App nicht neu gestartet wurde.')}
+$('go').onclick=()=>{if(M.on){stop();return}
+  if(!(NATIVE&&NATIVE.caps&&NATIVE.caps.lidarMap)){demo();return}
+  M.on=true;M.demo=false;NATIVE.on.depth=onFrame;NATIVE.on.depthError=d=>stop('LiDAR: '+d.message);NATIVE.post({cmd:'depthStart',map:true});
+  $('go').textContent='Kartierung anhalten';$('go').classList.add('stop');setState('LiDAR startet …','live','Handy kurz Richtung Boden neigen.')};
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&M.on)stop('Seite war im Hintergrund – Kartierung angehalten.')});
+window.addEventListener('resize',()=>render(true));
+
+/* ---------- Beispielraum ohne App ---------- */
+function demo(){M.demo=true;M.keys.clear();M.pts=[];M.cells.clear();M.path=[];M.way=0;M.floorY=0;M.dirty3d=true;
+  const R=(a,b)=>a+Math.random()*(b-a);const A=(x,y,z)=>addVoxel(x,y,z);const V=m=>Math.round(m/VS);
+  for(let x=0;x<V(5);x++)for(let z=0;z<V(4);z++)if(Math.random()<0.85)A(x,0,z);
+  for(let y=0;y<V(2.5);y++){for(let x=0;x<V(5);x++){if(!(x>V(3.8)&&x<V(4.7)&&y<V(2.05)))A(x,y,0);if(!(x>V(1)&&x<V(2.4)&&y>V(0.9)&&y<V(2.1)))A(x,y,V(4)-1)}for(let z=0;z<V(4);z++){A(0,y,z);A(V(5)-1,y,z)}}
+  for(let x=V(1.2);x<V(2.6);x++)for(let z=V(1.4);z<V(2.3);z++)A(x,V(0.75),z);
+  for(let x=V(3.4);x<V(4.9);x++)for(let z=V(2.9);z<V(3.85);z++)A(x,V(0.45),z);
+  for(let i=0;i<40;i++)A(V(R(2.9,3.2)),V(R(0.05,0.18)),V(R(0.9,1.2)));
+  M.path=[{x:4.2,y:1.4,z:0.4},{x:3.6,y:1.4,z:1.2},{x:2.9,y:1.4,z:2.6},{x:1.5,y:1.4,z:3.1}];M.way=3.2;M.pose={x:1.5,y:1.4,z:3.1,fx:-0.5,fz:-1};
+  setState('Beispielraum','live','Ohne App und LiDAR siehst du hier eine simulierte Karte: 5 × 4 m mit Tür, Fenster, Tisch, Sofa und einer Tasche am Boden.');render(true)}
+if(!(NATIVE&&NATIVE.caps&&NATIVE.caps.lidarMap)){$('go').textContent='Beispielraum anzeigen';$('detail').textContent='Die echte Kartierung läuft in der Lagebild-App auf einem iPhone mit LiDAR.'}
+render(true);
+})();
+</script>
+</body>
+</html>
