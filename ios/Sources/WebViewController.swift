@@ -25,7 +25,7 @@ final class WebViewController: UIViewController, WKScriptMessageHandler, WKNavig
         ucc.add(WeakMessageHandler(self), name: "lagebild")
         let lidar = DepthSensor.isSupported ? "true" : "false"
         let bridge = """
-        window.LagebildNative={caps:{version:'0.1.0',rawAudio:true,lidar:\(lidar),haptics:true},on:{},
+        window.LagebildNative={caps:{version:'0.2.0',rawAudio:true,lidar:\(lidar),lidarMap:\(lidar),haptics:true},on:{},
         post:function(m){window.webkit.messageHandlers.lagebild.postMessage(m)},
         dispatch:function(t,d){var f=this.on[t];if(f){try{f(d)}catch(e){console.error(e)}}}};
         """
@@ -91,7 +91,7 @@ final class WebViewController: UIViewController, WKScriptMessageHandler, WKNavig
         case "audioStop":
             audio.stop()
         case "depthStart":
-            depth.start()
+            depth.start(mapping: (body["map"] as? Bool) ?? false)
         case "depthStop":
             depth.stop()
         case "haptic":
