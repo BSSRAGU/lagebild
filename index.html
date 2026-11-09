@@ -135,6 +135,11 @@ nav button.run .dot{visibility:visible}
 <section id="flug">
   <div class="state" id="fState" role="status" aria-live="polite">Bereit</div>
   <div class="detail" id="fDetail"></div>
+  <div class="ticker" id="fPosCard" style="display:none;margin-top:8px;border-color:rgba(255,90,95,.5)"><h3>Berechneter Standort (aus Überflügen)</h3>
+    <div style="font-family:var(--fd);font-weight:700;font-size:26px;font-variant-numeric:tabular-nums" id="fPosCoord">–</div>
+    <div id="fPosPlace" style="font-size:15px;margin-top:2px">–</div>
+    <div class="read" style="margin-top:10px"><div><b id="fPosAcc">–</b><span>Unsicherheit</span></div><div><b id="fPosGps">–</b><span>Abweichung zum GPS</span></div></div>
+    <div class="hint" id="fPosBasis">–</div></div>
   <p class="lead">Hört tonale Geräusche 60–300 Hz und erkennt Spuren mit Frequenzabfall. Geschwindigkeit und Abstand werden nicht ausgegeben, solange das Quell- und Bewegungsmodell nicht validiert ist.</p>
   <button class="go" id="fGo">Mithören starten</button>
   <div class="read">
@@ -145,6 +150,7 @@ nav button.run .dot{visibility:visible}
   <div class="strip" style="padding:0;overflow:hidden"><div id="fMap" style="height:320px;background:#0B1322" role="region" aria-label="Karte mit Standort und Flugzeugen"></div></div>
   <div class="hint" id="fMapHint">Karte und Flugdaten starten mit „Mithören starten“. Flugzeugpositionen stammen aus ADS-B-Daten (adsb.lol), nicht aus dem Mikrofon; der Ton dient zur Zuordnung.</div>
   <div class="row" style="margin-top:10px"><button class="sec" id="fLocBtn" aria-pressed="false">Standort aus Überflügen: aus</button><button class="sec" id="fRegBtn">Suchregion: Deutschland</button></div>
+  <div class="row" style="margin-top:8px"><button class="sec" id="fSimBtn">Testlauf mit simulierten Überflügen</button></div>
   <div class="ticker" id="fLocBox" style="display:none"><h3>Standort aus Überflügen</h3><div id="fLoc">Warte auf den ersten gehörten Überflug …</div><div class="hint" id="fLocHint">Prinzip: Zeitpunkt und Frequenzabfall des Tons ergeben den Abstand zum Flugzeug, ADS-B dessen Position. Jeder Überflug liefert zwei mögliche Punkte links und rechts der Flugspur; mehrere Überflüge auf verschiedenen Routen schneiden sich im Standort. GPS dient nur zum Vergleich.</div></div>
   <div class="ticker" id="fMatchBox" style="display:none"><h3>Zuordnung des letzten Überflugs</h3><div id="fMatch"></div></div>
   <div class="ticker"><h3>Flugzeuge in der Nähe</h3><ul class="log" id="fList"><li><time>–</time><span>Noch keine Daten.</span><em></em></li></ul></div>
@@ -656,7 +662,7 @@ function loadLeaflet(){if(window.L)return Promise.resolve();return new Promise((
 const toRad=d=>d*Math.PI/180;
 function distM(a,b,c,d){const R=6371000,x=toRad(c-a),y=toRad(d-b),h=Math.sin(x/2)**2+Math.cos(toRad(a))*Math.cos(toRad(c))*Math.sin(y/2)**2;return 2*R*Math.asin(Math.sqrt(h))}
 function acIcon(track,hi){const col=hi?'#FF5A5F':'#FFB020';return L.divIcon({className:'',iconSize:[26,26],iconAnchor:[13,13],html:'<svg width="26" height="26" viewBox="0 0 26 26" style="transform:rotate('+(track||0)+'deg)"><path d="M13 2 L20 22 L13 17 L6 22 Z" fill="'+col+'" stroke="#070C16" stroke-width="1.5"/></svg>'})}
-function flStart(s){FL.s=s;FL.polling=false;LOC.events=[];LOC.est=null;FL.ac.clear();FL.best=null;$('fMatchBox').style.display='none';
+function flStart(s){FL.s=s;FL.polling=false;LOC.events=[];LOC.est=null;LOC.sim=false;$('fPosCard').style.display='none';FL.ac.clear();FL.best=null;$('fMatchBox').style.display='none';
   loadLeaflet().then(()=>{if(!s.alive)return;
     if(!FL.map){FL.map=L.map('fMap').setView([51.16,10.45],6);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'© OpenStreetMap'}).addTo(FL.map);FL.layer=L.layerGroup().addTo(FL.map)}
     setTimeout(()=>FL.map.invalidateSize(),100);if(LOC.on)flPoll();
@@ -678,7 +684,7 @@ function flPoll(){const s=FL.s;if(!s||!s.alive||FL.polling)return;if(!FL.me&&!LO
   .finally(()=>{if(FL.s&&FL.s.alive)sTimeout(FL.s,()=>{FL.polling=false;flPoll()},LOC.on?8000:5000);else FL.polling=false})}
 function flDraw(){if(!FL.map||!FL.layer)return;FL.layer.clearLayers();
   if(FL.me){L.circle([FL.me.lat,FL.me.lon],{radius:27780,color:'#5B98FF',weight:1,fill:false,dashArray:'4 6'}).addTo(FL.layer);
-    L.circleMarker([FL.me.lat,FL.me.lon],{radius:7,color:'#fff',weight:2,fillColor:'#35E0C8',fillOpacity:1}).bindTooltip('Du',{permanent:false}).addTo(FL.layer)}
+    L.circleMarker([FL.me.lat,FL.me.lon],{radius:7,color:'#fff',weight:2,fillColor:'#35E0C8',fillOpacity:1}).bindTooltip(LOC.on?'GPS':'Du',{permanent:LOC.on,direction:'bottom'}).addTo(FL.layer)}
   const rows=[];
   const ref=LOC.est||FL.me;
   for(const o of FL.ac.values()){const p=o.pts[o.pts.length-1];const hi=o.hex===FL.best;if(FL.ac.size>60&&(!ref||distM(ref.lat,ref.lon,p.lat,p.lon)>60000)&&!hi)continue;
@@ -729,11 +735,34 @@ function flSolve(){const evs=LOC.events.filter(e=>e.cands.length);LOC.est=null;i
   let txt=n===1?'Ein Überflug: zwei mögliche Standorte links und rechts der Spur von '+best.pick[0].flight+'. Ein zweiter Überflug auf anderer Route löst das auf.':
     'Schätzung aus '+n+' Überflügen ('+best.pick.map(p=>p.flight).join(', ')+'), Unsicherheit ca. ± '+nf(LOC.est.r/1000,1)+' km.';
   if(FL.me&&n>1){const err=distM(FL.me.lat,FL.me.lon,c.lat,c.lon);txt+=' Abweichung zum GPS: '+nf(err/1000,2)+' km.'}
-  $('fLoc').textContent=txt;if(FL.map&&n>1)FL.map.setView([c.lat,c.lon],11)}
+  $('fLoc').textContent=txt;if(FL.map&&n>1)FL.map.setView([c.lat,c.lon],11);flShowPos(best,n)}
+const fmtC=(lat,lon)=>Math.abs(lat).toFixed(5).replace('.',',')+'° '+(lat>=0?'N':'S')+'  '+Math.abs(lon).toFixed(5).replace('.',',')+'° '+(lon>=0?'O':'W');
+let geoLast='';
+function flShowPos(best,n){const card=$('fPosCard');card.style.display='';const E=LOC.est;
+  if(n===1){const cs=LOC.events[LOC.events.length-1].cands.slice(0,2);$('fPosCoord').textContent='2 Möglichkeiten';$('fPosPlace').textContent=cs.map((c,i)=>(i?'oder ':'')+fmtC(c.lat,c.lon)).join('  ');
+    $('fPosAcc').textContent='± '+nf(E.r/1000,1)+' km';$('fPosGps').textContent='–';$('fPosBasis').textContent='1 Überflug ('+best.pick[0].flight+'). Ein zweiter Überflug auf anderer Route entscheidet zwischen beiden Punkten.'+(LOC.sim?' · SIMULATION':'');return}
+  $('fPosCoord').textContent=fmtC(E.lat,E.lon);$('fPosAcc').textContent='± '+(E.r<1000?Math.round(E.r)+' m':nf(E.r/1000,1)+' km');
+  $('fPosGps').textContent=FL.me?(()=>{const e=distM(FL.me.lat,FL.me.lon,E.lat,E.lon);return e<1000?Math.round(e)+' m':nf(e/1000,1)+' km'})():'kein GPS';
+  $('fPosBasis').textContent=n+' Überflüge: '+best.pick.map(p=>p.flight).join(', ')+' · berechnet '+fmt(new Date())+(LOC.sim?' · SIMULATION':'');
+  const key=E.lat.toFixed(3)+','+E.lon.toFixed(3);if(key!==geoLast){geoLast=key;$('fPosPlace').textContent='Ort wird ermittelt …';
+    fetch('https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=16&accept-language=de&lat='+E.lat.toFixed(5)+'&lon='+E.lon.toFixed(5)).then(r=>r.json()).then(j=>{const a=j.address||{};
+      $('fPosPlace').textContent=[a.road,a.suburb||a.city_district,a.city||a.town||a.village||a.municipality].filter(Boolean).join(', ')||j.display_name||'Ort unbekannt'}).catch(()=>{$('fPosPlace').textContent='Ortsname nicht abrufbar'})}
+  logEvent('Überflug','Berechneter Standort '+fmtC(E.lat,E.lon)+' ± '+Math.round(E.r)+' m'+(FL.me?', Abweichung GPS '+Math.round(distM(FL.me.lat,FL.me.lon,E.lat,E.lon))+' m':''),LOC.sim?'Simulation':'aus '+n+' Überflügen')}
+// Testlauf: zwei simulierte Überflüge um den GPS-Standort (oder die Mitte der Suchregion)
+$('fSimBtn').onclick=()=>{if(!FL.map||!FL.s||!FL.s.alive){$('fSimBtn').textContent='Erst „Mithören starten“';return}
+  if(!LOC.on)$('fLocBtn').click();LOC.sim=true;LOC.events=[];const T=FL.me||LOC.region,now=Date.now();
+  const off=(o,dx,dy)=>UNENU(o,{x:dx,y:dy});
+  const plane=(hex,flight,track,dE,dN,alt,gs,tC)=>{const pts=[];const ue=Math.sin(toRad(track)),un=Math.cos(toRad(track));const C=off(T,dE,dN);for(let k=-120;k<=120;k+=5){const q=off(C,ue*gs*k,un*gs*k);pts.push({t:tC+k*1000,lat:q.lat,lon:q.lon,alt,gs,track})}
+    FL.ac.set(hex,{hex,flight,type:'SIM',pts,last:now});const d=Math.hypot(Math.hypot(dE,dN),alt-60),f0=150,sl=f0*gs*gs/(C_SOUND*d)*(1+0.2*(Math.random()*2-1));
+    return{fhi:f0*(1+gs/C_SOUND),flo:f0*(1-gs/C_SOUND),f0,slope:sl,cpa:new Date(tC+d/C_SOUND*1000+(Math.random()*4-2)*1000),drop:1}};
+  const e1=plane('sim1','SIM-A',75,-300,1400,900,65,now-90000);flLocate(e1);
+  setTimeout(()=>{const e2=plane('sim2','SIM-B',345,1800,200,700,55,now-30000);flLocate(e2);$('fSimBtn').textContent='Testlauf wiederholen'},1500);
+  $('fSimBtn').textContent='Simuliere zwei Überflüge …'};
+$('fLocBtn').addEventListener('click',()=>{if(!LOC.on){$('fPosCard').style.display='none';LOC.sim=false}});
 function flDrawLoc(){if(!LOC.on||!FL.layer)return;
   for(const e of LOC.events)for(const c of e.cands.slice(0,6))L.circleMarker([c.lat,c.lon],{radius:4,color:'#93A3B8',weight:1,fillOpacity:.5}).bindTooltip(c.flight+' · '+c.side).addTo(FL.layer);
   if(LOC.est){if(LOC.est.amb){for(const c of LOC.events[LOC.events.length-1].cands.slice(0,2))L.circle([c.lat,c.lon],{radius:LOC.est.r,color:'#FF5A5F',weight:2,fillOpacity:.08}).addTo(FL.layer)}
-    else{L.circle([LOC.est.lat,LOC.est.lon],{radius:LOC.est.r,color:'#FF5A5F',weight:2,fillOpacity:.12}).addTo(FL.layer);L.marker([LOC.est.lat,LOC.est.lon],{icon:L.divIcon({className:'',iconSize:[22,22],iconAnchor:[11,11],html:'<svg width="22" height="22"><path d="M11 1v20M1 11h20" stroke="#FF5A5F" stroke-width="3"/></svg>'})}).bindTooltip('Geschätzter Standort',{permanent:true,direction:'top'}).addTo(FL.layer)}}}
+    else{L.circle([LOC.est.lat,LOC.est.lon],{radius:LOC.est.r,color:'#FF5A5F',weight:2,fillOpacity:.12}).addTo(FL.layer);L.marker([LOC.est.lat,LOC.est.lon],{icon:L.divIcon({className:'',iconSize:[22,22],iconAnchor:[11,11],html:'<svg width="22" height="22"><path d="M11 1v20M1 11h20" stroke="#FF5A5F" stroke-width="3"/></svg>'})}).bindTooltip('Berechnet'+(LOC.sim?' (Simulation)':''),{permanent:true,direction:'top'}).addTo(FL.layer)}}}
 window.__LB.loc={LOC,FL,flLocate,flSolve};
 
 /* ================= Navigation ================= */
