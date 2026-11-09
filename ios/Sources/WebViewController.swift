@@ -5,6 +5,7 @@ import AVFoundation
 final class WebViewController: UIViewController, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate {
     static let startURL = URL(string: "https://bssragu.github.io/lagebild/")!
     static let allowedHost = "bssragu.github.io"
+    static let httpHosts: Set<String> = ["api.adsb.lol", "api.airplanes.live"]
 
     private var webView: WKWebView!
     private let audio = SonarAudio()
@@ -29,7 +30,7 @@ final class WebViewController: UIViewController, WKScriptMessageHandler, WKNavig
         ucc.add(WeakMessageHandler(self), name: "lagebild")
         let lidar = DepthSensor.isSupported ? "true" : "false"
         let bridge = """
-        window.LagebildNative={caps:{version:'\(Self.appVersion) (Build \(Self.appBuild))',build:\(Self.appBuild),rawAudio:true,lidar:\(lidar),lidarMap:\(lidar),haptics:true},on:{},
+        window.LagebildNative={caps:{version:'\(Self.appVersion) (Build \(Self.appBuild))',build:\(Self.appBuild),rawAudio:true,http:true,persons:\(lidar),lidar:\(lidar),lidarMap:\(lidar),haptics:true},on:{},
         post:function(m){window.webkit.messageHandlers.lagebild.postMessage(m)},
         dispatch:function(t,d){var f=this.on[t];if(f){try{f(d)}catch(e){console.error(e)}}}};
         """
@@ -136,6 +137,21 @@ final class WebViewController: UIViewController, WKScriptMessageHandler, WKNavig
             depth.start(mapping: (body["map"] as? Bool) ?? false)
         case "depthStop":
             depth.stop()
+        case "http":
+            let id = body["id"] as? String ?? ""
+            guard let s = body["url"] as? String, let url = URL(string: s),
+                  let host = url.host, Self.httpHosts.contains(host) else {
+                send("httpResult", ["id": id, "status": 0, "error": "Adresse nicht freigegeben"])
+                return
+            }
+            var req = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10)
+            req.setValue("Lagebild/1.0", forHTTPHeaderField: "User-Agent")
+            URLSession.shared.dataTask(with: req) { [weak self] data, response, error in
+                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                var out: [String: Any] = ["id": id, "status": status, "body": String(data: data ?? Data(), encoding: .utf8) ?? ""]
+                if let e = error { out["error"] = e.localizedDescription }
+                self?.send("httpResult", out)
+            }.resume()
         case "haptic":
             let style: UIImpactFeedbackGenerator.FeedbackStyle
             switch body["style"] as? String {

@@ -1,5 +1,6 @@
 import ARKit
 import simd
+import Vision
 
 /// Liefert die LiDAR-Tiefenkarte verkleinert und hochkant gedreht (etwa 8-mal pro Sekunde).
 /// Zusätzlich je Bildpunkt: Höhe über dem erkannten Boden und waagerechter Abstand zum Telefon.
@@ -20,6 +21,19 @@ final class DepthSensor: NSObject, ARSessionDelegate {
     static let maxVoxels = 400_000
     private var mapping = false
     private var voxels = Set<Int64>()
+
+    // Personenerkennung (Apple Vision) auf dem Kamerabild, Abstand aus LiDAR
+    private var lastPersonTime: TimeInterval = 0
+    private var persons: [[Float]] = []
+    // Objekterkennung: Bildklassifikation je Drittel (links, Mitte, rechts) etwa 1-mal pro Sekunde
+    private var lastObjectTime: TimeInterval = 0
+    private var objects: [[String: Any]] = []
+    private static let ignoredLabels: Set<String> = ["structure", "indoor", "interior_room", "room", "material", "wood_processed", "wood_natural", "textile", "wall", "floor", "ceiling", "housewares", "consumer_electronics", "machine", "conveyance", "tool", "document", "liquid", "art", "light", "sky", "outdoor"]
+    private lazy var humanRequest: VNDetectHumanRectanglesRequest = {
+        let r = VNDetectHumanRectanglesRequest()
+        r.upperBodyOnly = false
+        return r
+    }()
 
     private static func key(_ x: Int32, _ y: Int32, _ z: Int32) -> Int64 {
         let ox = Int64(x) + 1_048_576, oy = Int64(y) + 1_048_576, oz = Int64(z) + 1_048_576
@@ -145,6 +159,69 @@ final class DepthSensor: NSObject, ARSessionDelegate {
             }
         }
 
+        // Personen etwa 3-mal pro Sekunde erkennen; je Person: Mitte, Größe (normiert, hochkant),
+        // Abstand (Median LiDAR im Kern des Rahmens), Sicherheit, Raumposition
+        if frame.timestamp - lastPersonTime >= 0.3 {
+            lastPersonTime = frame.timestamp
+            let handler = VNImageRequestHandler(cvPixelBuffer: frame.capturedImage, orientation: .right, options: [:])
+            try? handler.perform([humanRequest])
+            var list: [[Float]] = []
+            for obs in humanRequest.results ?? [] {
+                let bb = obs.boundingBox
+                let x = Float(bb.midX), y = Float(1 - bb.midY), bw = Float(bb.width), bh = Float(bb.height)
+                var vals: [Float] = []
+                let gx0 = max(0, Int((x - bw * 0.2) * Float(ow))), gx1 = min(ow - 1, Int((x + bw * 0.2) * Float(ow)))
+                let gy0 = max(0, Int((y - bh * 0.2) * Float(oh))), gy1 = min(oh - 1, Int((y + bh * 0.2) * Float(oh)))
+                if gx0 <= gx1 && gy0 <= gy1 {
+                    for gy in gy0...gy1 {
+                        for gx in gx0...gx1 {
+                            let v = outDepth[gy * ow + gx]
+                            if v > 0 { vals.append(v) }
+                        }
+                    }
+                }
+                var d: Float = -1
+                var wx: Float = 0, wy: Float = 0, wz: Float = 0
+                if !vals.isEmpty {
+                    vals.sort()
+                    d = vals[vals.count / 2]
+                    // Bildmitte der Person zurück in Sensorkoordinaten (quer) und in den Raum projizieren
+                    let px = y * Float(w)
+                    let py = (1 - x) * Float(h)
+                    let xc = (px - cx) * d / fx
+                    let yc = -(py - cy) * d / fy
+                    let wp = T * SIMD4<Float>(xc, yc, -d, 1)
+                    wx = wp.x; wy = wp.y; wz = wp.z
+                }
+                list.append([x, y, bw, bh, d, Float(obs.confidence), wx, wy, wz])
+            }
+            persons = list
+        }
+
+        if frame.timestamp - lastObjectTime >= 1.0 {
+            lastObjectTime = frame.timestamp
+            var found: [[String: Any]] = []
+            let thirds: [(Int, CGRect)] = [(0, CGRect(x: 0, y: 0.15, width: 0.34, height: 0.7)),
+                                           (1, CGRect(x: 0.33, y: 0.15, width: 0.34, height: 0.7)),
+                                           (2, CGRect(x: 0.66, y: 0.15, width: 0.34, height: 0.7))]
+            let handler = VNImageRequestHandler(cvPixelBuffer: frame.capturedImage, orientation: .right, options: [:])
+            var requests: [(Int, VNClassifyImageRequest)] = []
+            for (idx, roi) in thirds {
+                let r = VNClassifyImageRequest()
+                r.regionOfInterest = roi
+                requests.append((idx, r))
+            }
+            try? handler.perform(requests.map { $0.1 })
+            for (idx, r) in requests {
+                let top = (r.results ?? [])
+                    .filter { $0.confidence >= 0.25 && !Self.ignoredLabels.contains($0.identifier) }
+                    .prefix(3)
+                    .map { [$0.identifier, $0.confidence] as [Any] }
+                found.append(["dir": idx, "labels": Array(top)])
+            }
+            objects = found
+        }
+
         let tracking: String
         switch frame.camera.trackingState {
         case .normal: tracking = "normal"
@@ -160,6 +237,8 @@ final class DepthSensor: NSObject, ARSessionDelegate {
             payload["camH"] = camPos.y - fy0
             payload["floorY"] = fy0
         }
+        payload["persons"] = persons
+        payload["objects"] = objects
         payload["pose"] = [camPos.x, camPos.y, camPos.z, -T.columns.2.x, -T.columns.2.z]
 
         if mapping, case .normal = frame.camera.trackingState {
