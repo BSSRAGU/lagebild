@@ -80,7 +80,7 @@ nav button.run .dot{visibility:visible}
 </style>
 </head>
 <body>
-<div class="top"><h1>Lagebild Lite<small id="sub">Kontaktsensor</small></h1><div class="clock" id="clock" aria-hidden="true">–:–:–</div></div>
+<div class="top"><h1>Lagebild Lite<small id="sub">Kontaktsensor</small></h1><div style="text-align:right"><div class="clock" id="clock" aria-hidden="true">–:–:–</div><a href="raumsicht.html" style="color:#93A3B8;font-size:13px">Raumsicht →</a></div></div>
 <main>
 <div class="scope" id="scope" aria-hidden="true"><canvas id="scope2d" width="660" height="660"></canvas><div class="mid"><div class="val" id="val">–</div><div class="lab" id="lab"></div></div></div>
 
@@ -165,7 +165,7 @@ nav button.run .dot{visibility:visible}
 <script>
 (function(){
 'use strict';
-const VERSION='2.0.0-schritt1';
+const VERSION='2.1.0';
 const $=id=>document.getElementById(id);
 const C_SOUND=343;
 const COL={teal:'#35E0C8',amber:'#FFB020',red:'#FF5A5F',blue:'#5B98FF',muted:'#93A3B8',line:'rgba(120,150,190,.22)'};
@@ -373,7 +373,7 @@ const SON_BANDS=[{f0:17500,f1:22000,gain:0.8,name:'17,5–22 kHz'},{f0:13000,f1:
 function bandRef(N,fs,b,fft){const ref=makeChirp(N,fs,b.f0,b.f1);const Rre=Float64Array.from(ref),Rim=new Float64Array(N);fft(Rre,Rim,false);
   const k0=Math.floor(b.f0/fs*N),k1=Math.ceil(b.f1/fs*N);for(let k=0;k<N;k++){let w=0;if(k>=k0&&k<=k1)w=0.5-0.5*Math.cos(2*Math.PI*(k-k0)/(k1-k0));Rre[k]*=w;Rim[k]*=w}return{ref,Rre,Rim}}
 function setBand(st,i){const b=st.bands[i],r=bandRef(st.N,st.fs,b,st.fft);st.bandIdx=i;st.ref=r.ref;st.Rre=r.Rre;st.Rim=r.Rim;st.f0=b.f0;st.f1=b.f1;st.gain=b.gain;st.bandStart=performance.now();st.pIn=0;st.pRef=0;st.pN=0;
-  try{st.node.port.postMessage({cmd:'ref',ref:r.ref});st.node.port.postMessage({cmd:'gain',v:b.gain})}catch(e){}st.calN=0;st.calAcc.fill(0)}
+  st.tx.setRef(r.ref,b.gain);st.calN=0;st.calAcc.fill(0)}
 function sonarHint(st){const r=st.bandRes.filter(Boolean);const anyLevel=r.some(x=>isFinite(x.lvl)&&x.lvl>6);const ec=st.info&&st.info['Echoauslöschung'];
   if(ec==='an')return 'Safari meldet aktive Echounterdrückung – sie entfernt den eigenen Ton aus dem Mikrofon.';
   if(anyLevel)return 'Ton kommt im Mikrofon an, passt aber nicht zum Sendesignal – vermutlich Signalverarbeitung von iOS (Echounterdrückung) trotz Abschaltung.';
@@ -381,8 +381,35 @@ function sonarHint(st){const r=st.bandRes.filter(Boolean);const anyLevel=r.some(
 let SON=null;// Zustand der letzten Sonarsitzung (für Export)
 MODES.sonar={name:'Sonar',ended(key,d){setState('s',key,d);['sPer','sHr','sRange','sMov'].forEach(i=>$(i).textContent='–');['sPerQ','sHrQ','sRangeQ'].forEach(i=>$(i).textContent='');bar('sMovB',0);setVal('sonar','–');resetScope('sonar');
   if(SON&&SON.rec&&SON.rec.on){SON.rec.on=false;$('sRec').textContent='Rohdaten aufzeichnen';$('sRec').classList.remove('on');$('sRecHint').textContent='Aufzeichnung mit Sitzungsende beendet: '+SON.rec.blocks.length+' Sweeps ('+nf(SON.rec.blocks.length*SON.N/SON.fs,0)+' s). Export möglich.'}}};
+const NATIVE=window.LagebildNative||null;
+const b64f32=x=>{const b=atob(x),u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return new Float32Array(u.buffer)};
+const f32b64=a=>{const u=new Uint8Array(a.buffer,a.byteOffset,a.byteLength);let r='';for(let i=0;i<u.length;i+=8192)r+=String.fromCharCode.apply(null,u.subarray(i,i+8192));return btoa(r)};
+function sonarSetup(s,fs,mic,mstat,tx){const N=SON_N,fft=makeFFT(N);
+  const bands=SON_BANDS.map(b=>({f0:b.f0,f1:Math.min(b.f1,0.45*fs),gain:b.gain,name:b.name})).filter(b=>b.f1-b.f0>=1500);
+  if(!bands.length)throw new Error('Abtastrate '+fs+' Hz zu niedrig für das Sonar.');
+  const B0=bandRef(N,fs,bands[0],fft),dmax=Math.ceil(SON_MAXR*2*fs/C_SOUND),NB=Math.ceil(dmax/SON_BIN);
+  const st={s,fs,N,f0:bands[0].f0,f1:bands[0].f1,ref:B0.ref,fft,Rre:B0.Rre,Rim:B0.Rim,dmax,NB,gain:bands[0].gain,bands,bandIdx:0,bandRes:[],bandStart:performance.now(),pIn:0,pRef:0,pN:0,cal:null,calN:0,calAcc:new Float64Array(N),calStart:performance.now(),calTries:0,calCount:0,
+    emaRe:new Float64Array(dmax),emaIm:new Float64Array(dmax),emaInit:false,E:new Float64Array(NB),Sm:new Float64Array(NB),noise:0,motionLevel:0,
+    target:{auto:true,bin:-1,tau:-1,since:0,cand:-1,candSince:0,lost:false,lowSince:0},ser:{re:[],im:[],t:[]},serBreak:'Start',
+    lastSeq:-1,lastBlockAt:performance.now(),gaps:0,clips:0,blocks:0,invalid:0,tauShift:0,weak:0,lastInvalid:'',
+    rec:null,info:mic.info,raw:mic.raw,mstat,motion:mstat==='erlaubt'?motionTracker(s):null,vit:null,lastVit:0,lastPer:0,lastHr:0,tx};
+  SON=st;window.__LB.sonar=st;
+  $('sRec').textContent='Rohdaten aufzeichnen';$('sRec').classList.remove('on');$('sRecHint').textContent='Rohdaten enthalten das komplette Mikrofonsignal, also auch hörbare Geräusche und Sprache. Grenze: 120 Sekunden.';
+  return st}
+function sonarGo(st){st.s.running=true;setState('s','kalibrierung','Eigenen Sendeton suchen und Laufzeit der Audiokette bestimmen …');sonarDiag(st);sonarWatch(st);sonarRenderLoop(st)}
 $('sGo').onclick=()=>{if(S.cur&&S.cur.mode==='sonar'){stopSession('beendet','Sonar beendet.');return}
   const mp=motionPermission();const s=newSession('sonar');setState('s','berechtigung','Mikrofon und Bewegungssensor freigeben …');
+  if(NATIVE&&NATIVE.caps&&NATIVE.caps.rawAudio){
+    (async()=>{try{const mstat=await mp;if(!s.alive)throw new Stale();
+      s.onStop.push(()=>{NATIVE.post({cmd:'audioStop'});NATIVE.on.audioBlock=null;NATIVE.on.audioState=null});
+      const fs=await new Promise((res,rej)=>{NATIVE.on.audioStarted=d=>res(d.fs);NATIVE.on.audioError=d=>rej(new Error('App-Audio: '+d.message));NATIVE.post({cmd:'audioStart',N:SON_N});setTimeout(()=>rej(new Error('App-Audio antwortet nicht.')),5000)});
+      if(!s.alive)throw new Stale();
+      const tx={setRef:(ref,g)=>NATIVE.post({cmd:'audioRef',ref:f32b64(ref),gain:g}),setGain:v=>NATIVE.post({cmd:'audioGain',v})};
+      const st=sonarSetup(s,fs,{info:{'Audioquelle':'Lagebild-App, iOS-Messmodus','Echoauslöschung':'aus (Messmodus)','Rauschunterdrückung':'aus (Messmodus)','Automatische Verstärkung':'aus (Messmodus)','Mikrofon-Abtastrate':fs+' Hz'},raw:{native:true,fs}},mstat,tx);
+      NATIVE.on.audioBlock=d=>{if(s.alive)sonarBlock(st,{seq:d.seq,frame:d.frame,clip:d.clip,gap:d.gap,noIn:0,data:b64f32(d.data)})};
+      NATIVE.on.audioState=d=>{if(s.alive)stopSession('unterbrochen','App-Audio: '+(d.reason||'unterbrochen'))};
+      tx.setRef(st.ref,st.gain);sonarGo(st);
+    }catch(e){startFail(s,e)}})();return}
   let ctx;try{needSecure();setAudioSession();ctx=newCtx(s)}catch(e){startFail(s,e);return}
   (async()=>{try{
     const mstat=await mp;if(!s.alive)throw new Stale();
@@ -391,24 +418,13 @@ $('sGo').onclick=()=>{if(S.cur&&S.cur.mode==='sonar'){stopSession('beendet','Son
     const url=URL.createObjectURL(new Blob([WORKLET_SRC],{type:'application/javascript'}));
     try{await ctx.audioWorklet.addModule(url)}catch(e){throw new Error('AudioWorklet konnte nicht geladen werden ('+(e.name||e.message)+') – Sonar nicht verfügbar.')}finally{URL.revokeObjectURL(url)}
     if(!s.alive)throw new Stale();
-    const fs=ctx.sampleRate,N=SON_N,fft=makeFFT(N);
-    const bands=SON_BANDS.map(b=>({f0:b.f0,f1:Math.min(b.f1,0.45*fs),gain:b.gain,name:b.name})).filter(b=>b.f1-b.f0>=1500);
-    if(!bands.length)throw new Error('Abtastrate '+fs+' Hz zu niedrig für das Sonar.');
-    const B0=bandRef(N,fs,bands[0],fft),ref=B0.ref,Rre=B0.Rre,Rim=B0.Rim,f0=bands[0].f0,f1=bands[0].f1;
-    const dmax=Math.ceil(SON_MAXR*2*fs/C_SOUND),NB=Math.ceil(dmax/SON_BIN);
-    const st={s,fs,N,f0,f1,ref,fft,Rre,Rim,dmax,NB,gain:bands[0].gain,bands,bandIdx:0,bandRes:[],bandStart:performance.now(),pIn:0,pRef:0,pN:0,cal:null,calN:0,calAcc:new Float64Array(N),calStart:performance.now(),calTries:0,calCount:0,
-      emaRe:new Float64Array(dmax),emaIm:new Float64Array(dmax),emaInit:false,E:new Float64Array(NB),Sm:new Float64Array(NB),noise:0,motionLevel:0,
-      target:{auto:true,bin:-1,tau:-1,since:0,cand:-1,candSince:0,lost:false,lowSince:0},ser:{re:[],im:[],t:[]},serBreak:'Start',
-      lastSeq:-1,lastBlockAt:performance.now(),gaps:0,clips:0,blocks:0,invalid:0,tauShift:0,weak:0,lastInvalid:'',
-      rec:null,info:mic.info,raw:mic.raw,mstat,motion:mstat==='erlaubt'?motionTracker(s):null,vit:null,lastVit:0,lastPer:0,lastHr:0,node:null};
-    SON=st;window.__LB.sonar=st;
-    $('sRec').textContent='Rohdaten aufzeichnen';$('sRec').classList.remove('on');$('sRecHint').textContent='Rohdaten enthalten das komplette Mikrofonsignal, also auch hörbare Geräusche und Sprache. Grenze: 120 Sekunden.';
-    const node=new AudioWorkletNode(ctx,'lb-sonar',{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[2],processorOptions:{ref,gain:st.gain}});st.node=node;
+    const tx={node:null,setRef(ref,g){try{this.node.port.postMessage({cmd:'ref',ref});this.node.port.postMessage({cmd:'gain',v:g})}catch(e){}},setGain(v){try{this.node.port.postMessage({cmd:'gain',v})}catch(e){}}};
+    const st=sonarSetup(s,ctx.sampleRate,mic,mstat,tx);
+    const node=new AudioWorkletNode(ctx,'lb-sonar',{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[2],processorOptions:{ref:st.ref,gain:st.gain}});tx.node=node;
     const src=ctx.createMediaStreamSource(mic.st);s.nodes.push(node,src);src.connect(node);node.connect(ctx.destination);
     node.port.onmessage=e=>{if(s.alive)sonarBlock(st,e.data)};
     node.onprocessorerror=()=>{if(s.alive)stopSession('unzureichend','Fehler im AudioWorklet – Sender gestoppt.')};
-    s.running=true;setState('s','kalibrierung','Eigenen Sendeton suchen und Laufzeit der Audiokette bestimmen …');
-    sonarDiag(st);sonarWatch(st);sonarRenderLoop(st);
+    sonarGo(st);
   }catch(e){startFail(s,e)}})()};
 function sonarWatch(st){const s=st.s;if(performance.now()-st.lastBlockAt>1500){stopSession('unterbrochen','Keine Audiodaten mehr vom Mikrofon. Sender gestoppt.');return}sTimeout(s,()=>sonarWatch(st),400)}
 function breakSeries(st,reason){if(st.ser.re.length)st.ser={re:[],im:[],t:[]};st.serBreak=reason;st.vit=null}
@@ -423,7 +439,7 @@ function sonarBlock(st,d){
   if(d.noIn>0)bad='Kein Mikrofonsignal im Block';
   if(st.rec&&st.rec.on)recordBlock(st,d);
   if(d.clip>0){st.clips++;bad='Übersteuerung';
-    if(st.gain>0.12&&performance.now()-(st.lastGainDrop||0)>800){st.gain*=0.7;st.lastGainDrop=performance.now();try{st.node.port.postMessage({cmd:'gain',v:st.gain})}catch(e){}resetCal(st,'Übersteuerung, Sendepegel auf '+Math.round(st.gain*100)+' % der Startstufe reduziert')}}
+    if(st.gain>0.12&&performance.now()-(st.lastGainDrop||0)>800){st.gain*=0.7;st.lastGainDrop=performance.now();st.tx.setGain(st.gain);resetCal(st,'Übersteuerung, Sendepegel auf '+Math.round(st.gain*100)+' % der Startstufe reduziert')}}
   if(bad){st.invalid++;st.lastInvalid=bad;breakSeries(st,bad);return}
   st.blocks++;
   const N=st.N,re=new Float64Array(N),im=new Float64Array(N),x=d.data;for(let i=0;i<N;i++)re[i]=x[i];
@@ -627,7 +643,7 @@ document.querySelectorAll('nav button').forEach(b=>b.addEventListener('click',()
   b.classList.add('on');b.setAttribute('aria-current','page');$(t).classList.add('on');$('sub').textContent=b.dataset.n;showMode(t)}));
 
 /* ================= Gerätecheck allgemein ================= */
-diag('gDiag',{'Softwarestand':VERSION,'Sicherer Kontext (HTTPS)':window.isSecureContext?'ja':'nein','getUserMedia':navigator.mediaDevices&&navigator.mediaDevices.getUserMedia?'verfügbar':'fehlt','Web Audio':(window.AudioContext||window.webkitAudioContext)?'verfügbar':'fehlt',
+diag('gDiag',{'Softwarestand':VERSION,'Umgebung':NATIVE?'Lagebild-App (Version '+(NATIVE.caps.version||'?')+', LiDAR: '+(NATIVE.caps.lidar?'ja':'nein')+')':'Browser','Sicherer Kontext (HTTPS)':window.isSecureContext?'ja':'nein','getUserMedia':navigator.mediaDevices&&navigator.mediaDevices.getUserMedia?'verfügbar':'fehlt','Web Audio':(window.AudioContext||window.webkitAudioContext)?'verfügbar':'fehlt',
   'AudioWorklet':typeof AudioWorkletNode!=='undefined'?'verfügbar':'fehlt','Bewegungssensor':typeof DeviceMotionEvent!=='undefined'?(typeof DeviceMotionEvent.requestPermission==='function'?'verfügbar, Freigabe nötig':'verfügbar'):'fehlt',
   'Audio-Session-API':navigator.audioSession?'verfügbar':'fehlt','Bildzeitstempel':'requestVideoFrameCallback' in HTMLVideoElement.prototype?'verfügbar':'fehlt','IndexedDB':window.indexedDB?'verfügbar':'fehlt','Teilen':navigator.share?'verfügbar':'fehlt','Browser':navigator.userAgent});
 ['k','s','p','f'].forEach(p=>setState(p,'bereit',''));showMode('kontakt');
