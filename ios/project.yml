@@ -1,0 +1,35 @@
+name: Lagebild
+options:
+  bundleIdPrefix: de.bssragu
+  deploymentTarget:
+    iOS: "16.0"
+targets:
+  Lagebild:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+    info:
+      path: Generated/Info.plist
+      properties:
+        CFBundleDisplayName: Lagebild
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        UILaunchScreen: {}
+        UIRequiredDeviceCapabilities: [arm64]
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIStatusBarStyle: UIStatusBarStyleLightContent
+        UIViewControllerBasedStatusBarAppearance: true
+        NSMicrophoneUsageDescription: "Das Sonar sendet einen Ton und misst dessen Echo über das Mikrofon. Es wird nichts gespeichert, außer du startest eine Rohdatenaufzeichnung."
+        NSCameraUsageDescription: "Kamera und LiDAR messen Entfernungen im Raum. Bilder werden nicht gespeichert."
+        NSMotionUsageDescription: "Der Bewegungssensor erkennt, ob das Telefon still liegt, damit Messungen gültig sind."
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: de.bssragu.lagebild
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_VERSION: "5.0"
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGN_IDENTITY: ""
+    scheme: {}
