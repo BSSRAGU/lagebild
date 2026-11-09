@@ -9,6 +9,10 @@ final class WebViewController: UIViewController, WKScriptMessageHandler, WKNavig
     private var webView: WKWebView!
     private let audio = SonarAudio()
     private let depth = DepthSensor()
+    private var updateChecked = false
+    static let versionURL = URL(string: "https://github.com/BSSRAGU/lagebild/releases/download/app-latest/version.json")!
+    static var appVersion: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?" }
+    static var appBuild: Int { Int(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0") ?? 0 }
 
     override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
 
@@ -25,7 +29,7 @@ final class WebViewController: UIViewController, WKScriptMessageHandler, WKNavig
         ucc.add(WeakMessageHandler(self), name: "lagebild")
         let lidar = DepthSensor.isSupported ? "true" : "false"
         let bridge = """
-        window.LagebildNative={caps:{version:'0.2.0',rawAudio:true,lidar:\(lidar),lidarMap:\(lidar),haptics:true},on:{},
+        window.LagebildNative={caps:{version:'\(Self.appVersion) (Build \(Self.appBuild))',build:\(Self.appBuild),rawAudio:true,lidar:\(lidar),lidarMap:\(lidar),haptics:true},on:{},
         post:function(m){window.webkit.messageHandlers.lagebild.postMessage(m)},
         dispatch:function(t,d){var f=this.on[t];if(f){try{f(d)}catch(e){console.error(e)}}}};
         """
@@ -51,6 +55,44 @@ final class WebViewController: UIViewController, WKScriptMessageHandler, WKNavig
                                                name: UIApplication.willResignActiveNotification, object: nil)
 
         webView.load(URLRequest(url: Self.startURL, cachePolicy: .reloadIgnoringLocalCacheData))
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        if !updateChecked {
+            updateChecked = true
+            checkForUpdate()
+        }
+    }
+
+    /// Prüft beim Start, ob auf GitHub ein neuerer Build liegt, und bietet die Installation über AltStore an.
+    private func checkForUpdate() {
+        let req = URLRequest(url: Self.versionURL, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10)
+        URLSession.shared.dataTask(with: req) { [weak self] data, _, _ in
+            guard let data = data,
+                  let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                  let latest = (obj["build"] as? NSNumber)?.intValue,
+                  latest > Self.appBuild else { return }
+            let ipa = obj["ipa"] as? String ?? "https://github.com/BSSRAGU/lagebild/releases/download/app-latest/Lagebild.ipa"
+            DispatchQueue.main.async { self?.offerUpdate(build: latest, ipa: ipa) }
+        }.resume()
+    }
+
+    private func offerUpdate(build: Int, ipa: String) {
+        let alert = UIAlertController(
+            title: "Neue App-Version",
+            message: "Build \(build) ist verfügbar (installiert: Build \(Self.appBuild)). Jetzt über AltStore aktualisieren? AltServer muss dazu auf dem PC laufen.",
+            preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Später", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Aktualisieren", style: .default) { _ in
+            var comps = URLComponents(string: "altstore://install")
+            comps?.queryItems = [URLQueryItem(name: "url", value: ipa)]
+            guard let target = comps?.url else { return }
+            UIApplication.shared.open(target) { ok in
+                if !ok, let web = URL(string: ipa) { UIApplication.shared.open(web) }
+            }
+        })
+        present(alert, animated: true)
     }
 
     @objc private func stopSensors() {
