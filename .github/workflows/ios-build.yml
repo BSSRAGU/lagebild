@@ -1,0 +1,55 @@
+name: iOS-App bauen
+
+on:
+  push:
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: XcodeGen installieren
+        run: brew install xcodegen
+
+      - name: Xcode-Projekt erzeugen
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: App bauen (unsigniert)
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild -project Lagebild.xcodeproj -scheme Lagebild -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build 2>&1 | tee build.log | grep -E "error:|warning: .*Swift|BUILD (SUCCEEDED|FAILED)" || true
+          test -d build/Build/Products/Release-iphoneos/Lagebild.app || (grep -E "error" build.log | head -50; exit 1)
+
+      - name: IPA packen
+        working-directory: ios
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/Lagebild.app Payload/
+          zip -qry Lagebild.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Lagebild-ipa
+          path: ios/Lagebild.ipa
+
+      - name: Release aktualisieren
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: app-latest
+          name: Lagebild App (neuester Build)
+          body: "Unsignierte IPA. Mit AltStore oder SideStore installieren."
+          prerelease: true
+          files: ios/Lagebild.ipa
