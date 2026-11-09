@@ -22,6 +22,7 @@ targets:
         UIViewControllerBasedStatusBarAppearance: true
         NSMicrophoneUsageDescription: "Das Sonar sendet einen Ton und misst dessen Echo über das Mikrofon. Es wird nichts gespeichert, außer du startest eine Rohdatenaufzeichnung."
         NSCameraUsageDescription: "Kamera und LiDAR messen Entfernungen im Raum. Bilder werden nicht gespeichert."
+        NSLocationWhenInUseUsageDescription: "Der Standort wird im Überflug-Modus genutzt, um Flugzeuge in der Nähe auf der Karte zu zeigen."
         NSMotionUsageDescription: "Der Bewegungssensor erkennt, ob das Telefon still liegt, damit Messungen gültig sind."
     settings:
       base:
