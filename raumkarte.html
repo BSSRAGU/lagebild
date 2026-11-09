@@ -40,7 +40,7 @@ main{padding:0 16px 32px}
 <header><h1>Raumkarte<small>Eigene LiDAR-Kartierung · Forschungsdemo</small></h1><span><a href="raumsicht.html">Raumsicht</a> · <a href="./">Lagebild</a></span></header>
 <main>
   <div class="view" id="view"><canvas id="c2d"></canvas><canvas id="c3d" style="display:none"></canvas><div class="badge" id="badge">–</div></div>
-  <div class="legend"><span><i style="background:#0E5A5A"></i>Boden</span><span><i style="background:#FFB020"></i>Gegenstand bis 1 m</span><span><i style="background:#E8E2D6"></i>Wand / hoch</span><span><i style="background:#5B98FF"></i>Weg</span><span><i style="background:#FF5A5F"></i>Handy</span></div>
+  <div class="legend"><span><i style="background:#0E5A5A"></i>Boden</span><span><i style="background:#FFB020"></i>Gegenstand bis 1 m</span><span><i style="background:#E8E2D6"></i>Wand / hoch</span><span><i style="background:#5B98FF"></i>Weg</span><span><i style="background:#FF5A5F"></i>Handy</span><span><i style="background:#C9A2FF;border-radius:5px"></i>Person</span></div>
   <div class="state" id="state" role="status" aria-live="polite">Bereit</div>
   <div class="detail" id="detail"></div>
   <button class="go" id="go">Kartierung starten</button>
@@ -58,6 +58,8 @@ main{padding:0 16px 32px}
     <div><b id="sSize">–</b><span>Ausdehnung (Wände/Hohes)</span></div>
     <div><b id="sPts">–</b><span>Messwürfel à 5 cm</span></div>
     <div><b id="sWay">–</b><span>Zurückgelegter Weg</span></div>
+    <div><b id="sPers" style="color:#C9A2FF">–</b><span>Personen im Sichtfeld</span></div>
+    <div><b id="sPersD">–</b><span>Nächste Person</span></div>
   </div>
   <div class="card">
     <b>So funktioniert es.</b> Jeder LiDAR-Messpunkt wird mit der aktuellen Handyposition in feste Raumkoordinaten umgerechnet und als 5-cm-Würfel gespeichert. Beim langsamen Gehen und Schwenken wächst so eine eigene Karte des Raums – ohne Raumpläne, Markierungen oder Messpunkte. Die Farbe zeigt die Höhe über dem Boden.
@@ -84,6 +86,7 @@ function b64(s,T){const b=atob(s),u=new Uint8Array(b.length);for(let i=0;i<b.len
 function onFrame(f){if(!M.on)return;
   if(f.vox){const a=b64(f.vox,Int16Array);for(let i=0;i+2<a.length;i+=3)addVoxel(a[i],a[i+1],a[i+2])}
   if(typeof f.floorY==='number')M.floorY=f.floorY;
+  if(f.persons){M.persons=f.persons.filter(p=>p[5]>=0.5&&p[4]>0&&p.length>=9).map(p=>({x:p[6],z:p[8],d:p[4]}));const all=f.persons.filter(p=>p[5]>=0.5).length;$('sPers').textContent=all;const nd=M.persons.length?Math.min(...M.persons.map(p=>p.d)):NaN;$('sPersD').textContent=isFinite(nd)?fmtM(nd):'–'}
   if(f.pose){const p={x:f.pose[0],y:f.pose[1],z:f.pose[2],fx:f.pose[3],fz:f.pose[4]};const last=M.path[M.path.length-1];
     if(!last||Math.hypot(p.x-last.x,p.z-last.z)>0.1){if(last)M.way+=Math.hypot(p.x-last.x,p.z-last.z);M.path.push(p)}M.pose=p}
   const now=performance.now();M.fps.push(now);while(M.fps.length&&M.fps[0]<now-2000)M.fps.shift();
@@ -117,6 +120,8 @@ function render(force){const now=performance.now();if(!force&&now-M.lastRender<2
   if(M.pose){const X=ox+M.pose.x*s,Z=oz+M.pose.z*s,n=Math.hypot(M.pose.fx,M.pose.fz)||1,fx=M.pose.fx/n,fz=M.pose.fz/n,L=18*dpr;
     c.fillStyle='rgba(255,90,95,.18)';c.beginPath();c.moveTo(X,Z);const a=Math.atan2(fz,fx);c.arc(X,Z,L*3,a-0.5,a+0.5);c.closePath();c.fill();
     c.fillStyle='#FF5A5F';c.beginPath();c.moveTo(X+fx*L,Z+fz*L);c.lineTo(X-fz*L*0.45,Z+fx*L*0.45);c.lineTo(X+fz*L*0.45,Z-fx*L*0.45);c.closePath();c.fill()}
+  // Personen
+  if(M.persons)for(const q of M.persons){const X=ox+q.x*s,Z=oz+q.z*s;c.fillStyle='rgba(201,162,255,.25)';c.beginPath();c.arc(X,Z,0.35*s,0,7);c.fill();c.fillStyle='#C9A2FF';c.beginPath();c.arc(X,Z,Math.max(5*dpr,0.15*s),0,7);c.fill()}
   // Maßstab
   c.fillStyle='#93A3B8';c.font=(12*dpr)+'px system-ui';c.fillRect(12*dpr,H-16*dpr,s,3*dpr);c.fillText('1 m',12*dpr,H-22*dpr)}
 function stats(){let floor=0,x0=1e9,x1=-1e9,z0=1e9,z1=-1e9,walls=0;for(const k of M.cells.values()){const h=heightOf(k);if(h!=null&&h<0.06)floor++;if(h!=null&&h>=1.0){walls++;if(k.ix<x0)x0=k.ix;if(k.ix>x1)x1=k.ix;if(k.iz<z0)z0=k.iz;if(k.iz>z1)z1=k.iz}}

@@ -142,6 +142,10 @@ nav button.run .dot{visibility:visible}
     <div><b id="fCpa">–</b><span>Mittendurchgang (Uhrzeit)</span></div>
   </div>
   <div class="strip"><canvas id="fStrip" width="700" height="220" role="img" aria-label="Spektrogramm"></canvas><p id="fStripTxt">Spektrogramm 40–400 Hz, 90 Sekunden</p></div>
+  <div class="strip" style="padding:0;overflow:hidden"><div id="fMap" style="height:320px;background:#0B1322" role="region" aria-label="Karte mit Standort und Flugzeugen"></div></div>
+  <div class="hint" id="fMapHint">Karte und Flugdaten starten mit „Mithören starten“. Flugzeugpositionen stammen aus ADS-B-Daten (adsb.lol), nicht aus dem Mikrofon; der Ton dient zur Zuordnung.</div>
+  <div class="ticker" id="fMatchBox" style="display:none"><h3>Zuordnung des letzten Überflugs</h3><div id="fMatch"></div></div>
+  <div class="ticker"><h3>Flugzeuge in der Nähe</h3><ul class="log" id="fList"><li><time>–</time><span>Noch keine Daten.</span><em></em></li></ul></div>
   <details class="diag"><summary>Gerätecheck</summary><dl id="fDiag"></dl></details>
 </section>
 
@@ -165,7 +169,7 @@ nav button.run .dot{visibility:visible}
 <script>
 (function(){
 'use strict';
-const VERSION='2.1.0';
+const VERSION='2.2.0';
 const $=id=>document.getElementById(id);
 const C_SOUND=343;
 const COL={teal:'#35E0C8',amber:'#FFB020',red:'#FF5A5F',blue:'#5B98FF',muted:'#93A3B8',line:'rgba(120,150,190,.22)'};
@@ -604,13 +608,13 @@ function pFrame(s,p,v,t){if(!v.videoWidth)return;const c=p.cv.getContext('2d',{w
   scope('puls',level,color)}
 
 /* ================= Überflug ================= */
-MODES.flug={name:'Überflug',ended(key,d){setState('f',key,d);$('fDrop').textContent='–';$('fCpa').textContent='–';setVal('flug','–');resetScope('flug')}};
+MODES.flug={name:'Überflug',ended(key,d){flStop();setState('f',key,d);$('fDrop').textContent='–';$('fCpa').textContent='–';setVal('flug','–');resetScope('flug')}};
 $('fGo').onclick=()=>{if(S.cur&&S.cur.mode==='flug'){stopSession('beendet','Mithören beendet.');return}
   const s=newSession('flug');setState('f','berechtigung','Mikrofon freigeben …');let ctx;try{needSecure();setAudioSession();ctx=newCtx(s)}catch(e){startFail(s,e);return}
   (async()=>{try{const mic=await getMic(s);const src=ctx.createMediaStreamSource(mic.st),an=ctx.createAnalyser();an.fftSize=32768;an.smoothingTimeConstant=0.6;src.connect(an);s.nodes.push(src,an);
     const f={an,buf:new Float32Array(an.frequencyBinCount),fs:ctx.sampleRate,track:[],spec:[],t0:performance.now(),ev:null};
     diag('fDiag',Object.assign({'Sitzung':s.id,'Audio-Abtastrate':ctx.sampleRate+' Hz','Frequenzauflösung':nf(ctx.sampleRate/32768,2)+' Hz'},mic.info));
-    s.running=true;setState('f','laeuft','Höre zu …');fLoop(s,f)}catch(e){startFail(s,e)}})()};
+    s.running=true;setState('f','laeuft','Höre zu …');fLoop(s,f);flStart(s)}catch(e){startFail(s,e)}})()};
 function fLoop(s,f){f.an.getFloatFrequencyData(f.buf);const binHz=f.fs/f.an.fftSize,B=f.buf;
   const lo=Math.floor(40/binHz),hi=Math.floor(400/binHz),l2=Math.floor(60/binHz),h2=Math.floor(300/binHz);
   const col=B.slice(lo,hi);let pk=-300,bi=-1;for(let i=l2;i<h2;i++)if(B[i]>pk){pk=B[i];bi=i}
@@ -629,12 +633,65 @@ function fLoop(s,f){f.an.getFloatFrequencyData(f.buf);const binHz=f.fs/f.an.fftS
       setState('f','laeuft','Tonale Spur mit Frequenzabfall '+nf(fhi,0)+' → '+nf(flo,0)+' Hz');color=COL.amber;f.ev={fhi,flo,drop,cpa}}
     else{setState('f','laeuft','Gleichbleibender Ton, kein Abfall');color=COL.amber}}
   else if(tonal){setState('f','laeuft','Tonales Signal '+nf(fpk,0)+' Hz');color=COL.amber}
-  else{setState('f','laeuft',f.ev?'Spur beendet':'Höre zu …');if(f.ev){logEvent('Überflug','Tonale Spur '+nf(f.ev.fhi,0)+' → '+nf(f.ev.flo,0)+' Hz (−'+nf(f.ev.drop,1)+' %), Mittendurchgang '+fmt(f.ev.cpa),'Modell nicht validiert');f.ev=null}}
+  else{setState('f','laeuft',f.ev?'Spur beendet':'Höre zu …');if(f.ev){logEvent('Überflug','Tonale Spur '+nf(f.ev.fhi,0)+' → '+nf(f.ev.flo,0)+' Hz (−'+nf(f.ev.drop,1)+' %), Mittendurchgang '+fmt(f.ev.cpa),'Modell nicht validiert');flMatch(f.ev);f.ev=null}}
   scope('flug',level,color);
   const cv=$('fStrip'),c=cv.getContext('2d'),W=cv.width,H=cv.height;c.fillStyle='#070C16';c.fillRect(0,0,W,H);const cw=Math.max(1,W/300);
   for(let x=0;x<f.spec.length;x++){const sp=f.spec[x];let mx=-300,mn=0;for(let i=0;i<sp.length;i++){if(sp[i]>mx)mx=sp[i];if(sp[i]<mn)mn=sp[i]}
     for(let y=0;y<sp.length;y++){const v=(sp[y]-mn)/((mx-mn)||1);if(v<0.5)continue;const t=(v-0.5)/0.5;c.fillStyle=t<0.7?'rgba(255,176,32,'+(t/0.7).toFixed(2)+')':'rgb(255,'+Math.round(176+79*(t-0.7)/0.3)+','+Math.round(32+223*(t-0.7)/0.3)+')';c.fillRect(x*cw,H-(y/sp.length)*H-2,cw,2)}}
   sTimeout(s,()=>fLoop(s,f),300)}
+
+/* ================= Überflug: Karte und ADS-B ================= */
+const FL={map:null,layer:null,me:null,ac:new Map(),best:null,watch:null,s:null,err:''};
+function httpGet(url){
+  if(NATIVE&&NATIVE.caps&&NATIVE.caps.http){return new Promise((res,rej)=>{const id=Math.random().toString(36).slice(2);NATIVE.__http=NATIVE.__http||{};NATIVE.__http[id]={res,rej};
+    NATIVE.on.httpResult=d=>{const h=NATIVE.__http[d.id];if(!h)return;delete NATIVE.__http[d.id];if(d.status>=200&&d.status<300)h.res(d.body);else h.rej(new Error(d.error||('HTTP '+d.status)))};
+    NATIVE.post({cmd:'http',id,url});setTimeout(()=>{if(NATIVE.__http[id]){delete NATIVE.__http[id];rej(new Error('Zeitüberschreitung'))}},12000)})}
+  return fetch(url,{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.text()})}
+function loadLeaflet(){if(window.L)return Promise.resolve();return new Promise((res,rej)=>{const l=document.createElement('link');l.rel='stylesheet';l.href='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';document.head.appendChild(l);
+  const sc=document.createElement('script');sc.src='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';sc.onload=()=>res();sc.onerror=()=>rej(new Error('Kartenmodul nicht ladbar'));document.head.appendChild(sc)})}
+const toRad=d=>d*Math.PI/180;
+function distM(a,b,c,d){const R=6371000,x=toRad(c-a),y=toRad(d-b),h=Math.sin(x/2)**2+Math.cos(toRad(a))*Math.cos(toRad(c))*Math.sin(y/2)**2;return 2*R*Math.asin(Math.sqrt(h))}
+function acIcon(track,hi){const col=hi?'#FF5A5F':'#FFB020';return L.divIcon({className:'',iconSize:[26,26],iconAnchor:[13,13],html:'<svg width="26" height="26" viewBox="0 0 26 26" style="transform:rotate('+(track||0)+'deg)"><path d="M13 2 L20 22 L13 17 L6 22 Z" fill="'+col+'" stroke="#070C16" stroke-width="1.5"/></svg>'})}
+function flStart(s){FL.s=s;FL.ac.clear();FL.best=null;$('fMatchBox').style.display='none';
+  loadLeaflet().then(()=>{if(!s.alive)return;
+    if(!FL.map){FL.map=L.map('fMap').setView([51.16,10.45],6);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'© OpenStreetMap'}).addTo(FL.map);FL.layer=L.layerGroup().addTo(FL.map)}
+    setTimeout(()=>FL.map.invalidateSize(),100);
+    if(!navigator.geolocation){$('fMapHint').textContent='Standort nicht verfügbar – keine Karte.';return}
+    FL.watch=navigator.geolocation.watchPosition(p=>{const first=!FL.me;FL.me={lat:p.coords.latitude,lon:p.coords.longitude,acc:p.coords.accuracy};if(first){FL.map.setView([FL.me.lat,FL.me.lon],10);flPoll()}flDraw()},
+      e=>{$('fMapHint').textContent='Standort nicht freigegeben ('+e.message+'). Ohne Standort keine Flugzeugsuche.'},{enableHighAccuracy:true,maximumAge:10000});
+    s.onStop.push(()=>{if(FL.watch!=null)navigator.geolocation.clearWatch(FL.watch);FL.watch=null});
+  }).catch(e=>{$('fMapHint').textContent=e.message})}
+function flStop(){FL.s=null}
+function flPoll(){const s=FL.s;if(!s||!s.alive||!FL.me)return;
+  const url='https://api.adsb.lol/v2/lat/'+FL.me.lat.toFixed(4)+'/lon/'+FL.me.lon.toFixed(4)+'/dist/15';
+  httpGet(url).then(t=>{const j=JSON.parse(t),now=Date.now();FL.err='';
+    for(const a of (j.ac||[])){if(a.lat==null||a.lon==null)continue;const alt=a.alt_baro==='ground'?0:(typeof a.alt_baro==='number'?a.alt_baro*0.3048:(a.alt_geom||0)*0.3048);
+      let o=FL.ac.get(a.hex);if(!o){o={hex:a.hex,pts:[]};FL.ac.set(a.hex,o)}o.flight=(a.flight||'').trim()||a.r||a.hex;o.type=a.t||'';o.reg=a.r||'';o.last=now;
+      o.pts.push({t:now-(a.seen_pos||0)*1000,lat:a.lat,lon:a.lon,alt,gs:(a.gs||0)*0.5144,track:a.track||0});if(o.pts.length>80)o.pts.shift()}
+    for(const [k,o] of FL.ac)if(now-o.last>120000)FL.ac.delete(k);
+    $('fMapHint').textContent=FL.ac.size+' Flugzeuge im Umkreis von 28 km · Stand '+fmt(new Date())+' · Daten: adsb.lol';flDraw()})
+  .catch(e=>{FL.err=e.message;$('fMapHint').textContent=(NATIVE&&NATIVE.caps&&NATIVE.caps.http)?'Flugdaten nicht abrufbar: '+e.message:'Flugdaten lassen sich nur in der Lagebild-App laden (der Browser blockiert den Abruf). Standort und Karte funktionieren.'})
+  .finally(()=>{if(FL.s&&FL.s.alive)sTimeout(FL.s,flPoll,5000)})}
+function flDraw(){if(!FL.map||!FL.layer)return;FL.layer.clearLayers();
+  if(FL.me){L.circle([FL.me.lat,FL.me.lon],{radius:27780,color:'#5B98FF',weight:1,fill:false,dashArray:'4 6'}).addTo(FL.layer);
+    L.circleMarker([FL.me.lat,FL.me.lon],{radius:7,color:'#fff',weight:2,fillColor:'#35E0C8',fillOpacity:1}).bindTooltip('Du',{permanent:false}).addTo(FL.layer)}
+  const rows=[];
+  for(const o of FL.ac.values()){const p=o.pts[o.pts.length-1];const hi=o.hex===FL.best;
+    if(o.pts.length>1)L.polyline(o.pts.map(q=>[q.lat,q.lon]),{color:hi?'#FF5A5F':'#FFB020',weight:2,opacity:.6}).addTo(FL.layer);
+    L.marker([p.lat,p.lon],{icon:acIcon(p.track,hi)}).bindTooltip(o.flight+' · '+Math.round(p.alt)+' m',{permanent:hi||FL.ac.size<=6,direction:'right',offset:[10,0]}).addTo(FL.layer);
+    if(FL.me){const h=distM(FL.me.lat,FL.me.lon,p.lat,p.lon);rows.push({o,p,d:Math.hypot(h,p.alt)})}}
+  rows.sort((a,b)=>a.d-b.d);const ul=$('fList');ul.textContent='';
+  if(!rows.length){const li=document.createElement('li');li.innerHTML='<time>–</time><span>Keine Flugzeuge im Umkreis.</span><em></em>';ul.appendChild(li)}
+  rows.slice(0,6).forEach(r=>{const li=document.createElement('li');const t=document.createElement('time');t.textContent=nf(r.d/1000,1)+' km';const sp=document.createElement('span');sp.textContent=r.o.flight+(r.o.type?' · '+r.o.type:'');const sm=document.createElement('small');sm.textContent=Math.round(r.p.alt)+' m Höhe · '+Math.round(r.p.gs*3.6)+' km/h';sp.appendChild(sm);const em=document.createElement('em');em.textContent=r.o.hex===FL.best?'gehört':'';li.append(t,sp,em);ul.appendChild(li)})}
+function flMatch(ev){if(!FL.me||!FL.ac.size)return;const tc=ev.cpa.getTime();let best=null;
+  for(const o of FL.ac.values()){let m=null;for(const q of o.pts){const d=Math.hypot(distM(FL.me.lat,FL.me.lon,q.lat,q.lon),q.alt);if(!m||d<m.d)m={d,t:q.t}}
+    if(!m)continue;const ta=m.t+m.d/C_SOUND*1000;const dt=Math.abs(ta-tc)/1000;if(dt>90||m.d>15000)continue;const score=dt/20+m.d/4000;if(!best||score<best.score)best={o,m,dt,score}}
+  const box=$('fMatchBox'),el=$('fMatch');box.style.display='';
+  if(!best){el.textContent='Kein Flugzeug passt zeitlich zum gehörten Überflug ('+fmt(ev.cpa)+'). Mögliche Ursachen: Hubschrauber oder Fahrzeug ohne ADS-B, oder Daten unvollständig.';return}
+  FL.best=best.o.hex;const p=best.o.pts[best.o.pts.length-1];
+  el.textContent='Wahrscheinlich '+best.o.flight+(best.o.type?' ('+best.o.type+')':'')+' – kleinster Abstand '+nf(best.m.d/1000,1)+' km, Zeitversatz zum Ton '+Math.round(best.dt)+' s (Schalllaufzeit berücksichtigt).';
+  logEvent('Überflug','Zuordnung: '+best.o.flight+(best.o.type?' ('+best.o.type+')':'')+', Abstand '+nf(best.m.d/1000,1)+' km, Versatz '+Math.round(best.dt)+' s','ADS-B-Abgleich');
+  flDraw();if(FL.map)FL.map.panTo([p.lat,p.lon])}
 
 /* ================= Navigation ================= */
 document.querySelectorAll('nav button').forEach(b=>b.addEventListener('click',()=>{const t=b.dataset.t;

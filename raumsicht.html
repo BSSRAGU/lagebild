@@ -21,6 +21,7 @@ main{padding:0 16px 32px}
 #depth{image-rendering:auto;opacity:.75}
 .view .badge{position:absolute;left:10px;top:10px;font-size:12px;background:rgba(7,12,22,.75);padding:4px 8px;border-radius:8px;color:var(--muted);font-variant-numeric:tabular-nums}
 .view .msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;color:var(--muted);font-size:15px}
+.pers{display:none;align-items:center;gap:14px;margin-top:10px;background:rgba(24,36,54,.8);border:1px solid var(--line);border-radius:16px;padding:10px 14px}.pers b{font-family:var(--fd);font-size:44px;line-height:1;color:#C9A2FF;font-variant-numeric:tabular-nums}.pers span{font-size:14px;color:var(--muted)}.pers span strong{display:block;color:var(--text);font-size:16px}
 .zones{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:10px;height:56px;align-items:end}
 .zones i{display:block;background:var(--teal);border-radius:4px 4px 0 0;height:4%;transition:height .12s}
 .zones i.near{background:var(--amber)}.zones i.vnear{background:var(--red)}
@@ -50,6 +51,8 @@ main{padding:0 16px 32px}
     <div class="badge" id="badge">–</div>
     <div class="msg" id="msg">Kopfhörer aufsetzen (am besten AirPods), dann starten. Beim ersten Start wird ein KI-Modell geladen (ca. 25–50 MB, danach im Browser zwischengespeichert).</div>
   </div>
+  <div class="pers" id="pers" role="status" aria-live="polite"><b id="persN">0</b><span><strong id="persHead">Personen im Sichtfeld</strong><span id="persTxt">Kamera + LiDAR, bis ca. 5 m</span></span></div>
+  <div class="pers" id="objBox" style="display:none"><span style="width:100%"><strong>Erkannte Gegenstände</strong><span id="objTxt">–</span></span></div>
   <div class="zones" id="zones" aria-hidden="true"></div>
   <div class="zl" aria-hidden="true"><span>links</span><span>Mitte</span><span>rechts</span></div>
   <div class="state" id="state" role="status" aria-live="polite">Bereit</div>
@@ -60,6 +63,7 @@ main{padding:0 16px 32px}
     <button class="sec" id="mScan" aria-pressed="true">Klang: Scanner</button>
     <button class="sec" id="mWarn" aria-pressed="true">Nah-Warnung</button>
     <button class="sec" id="say">Ansage</button>
+    <button class="sec" id="mObj" aria-pressed="true">Objekte ansagen</button>
   </div>
   <div class="row">
     <button class="sec" id="vMix" aria-pressed="true">Bild: Mischung</button>
@@ -85,7 +89,7 @@ const $=id=>document.getElementById(id);
 const MODEL_ID='onnx-community/depth-anything-v2-small';
 const COLS=7,LONG=252;
 const NATIVE=window.LagebildNative||null;
-const st={src:(NATIVE&&NATIVE.caps&&NATIVE.caps.lidar)?'lidar':'ai',dist:new Array(7).fill(NaN),lastHaptic:0,on:false,sid:0,model:null,backend:'',ctx:null,stream:null,mode:{scan:true,warn:true},view:'mix',
+const st={src:(NATIVE&&NATIVE.caps&&NATIVE.caps.lidar)?'lidar':'ai',dist:new Array(7).fill(NaN),lastHaptic:0,on:false,sid:0,model:null,backend:'',ctx:null,stream:null,mode:{scan:true,warn:true,obj:true},view:'mix',
   near:new Array(COLS).fill(0),norm:{lo:null,hi:null},fps:0,lastInf:0,nextScan:0,nextTick:0,w:0,h:0,test:new URLSearchParams(location.search).has('test')};
 window.__RS=st;
 
@@ -97,6 +101,7 @@ $('srcLidar').onclick=()=>{if(st.on)return;st.src='lidar';toggle('srcLidar',true
 $('srcAi').onclick=()=>{if(st.on)return;st.src='ai';toggle('srcLidar',false);toggle('srcAi',true)};
 function toggle(id,on){$(id).setAttribute('aria-pressed',on?'true':'false')}
 $('mScan').onclick=()=>{st.mode.scan=!st.mode.scan;toggle('mScan',st.mode.scan)};
+$('mObj').onclick=()=>{st.mode.obj=!st.mode.obj;toggle('mObj',st.mode.obj)};
 $('mWarn').onclick=()=>{st.mode.warn=!st.mode.warn;toggle('mWarn',st.mode.warn)};
 $('vMix').onclick=()=>{st.view='mix';toggle('vMix',true);toggle('vDepth',false);$('depth').style.opacity=.75};
 $('vDepth').onclick=()=>{st.view='depth';toggle('vMix',false);toggle('vDepth',true);$('depth').style.opacity=1};
@@ -137,7 +142,7 @@ function sonify(){if(!st.ctx||!st.on)return;const c=st.ctx,now=c.currentTime;
 function say(){const names=['ganz links','links','leicht links','geradeaus','leicht rechts','rechts','ganz rechts'];let bi=0;for(let i=1;i<COLS;i++)if(st.near[i]>st.near[bi])bi=i;const v=st.near[bi];
   const dm=st.dist[bi],m=isFinite(dm)?(dm<1?Math.round(dm*100)+' Zentimeter':dm.toFixed(1).replace('.',',')+' Meter'):'';
   const dropI=(st.drop||[]).findIndex(Boolean);const txt=!st.on?'Raumsicht ist nicht gestartet.':st.src==='lidar'&&dropI>=0?'Achtung, Kante abwärts, '+names[dropI]+'.':st.src==='lidar'?(m?'Nächstes Hindernis '+names[bi]+', '+m+'.':'Keine gültige Messung.'):v>0.85?'Sehr nah, '+names[bi]+'.':v>0.6?'Nah, '+names[bi]+'.':'Nichts auffällig nah. Nächstes Objekt '+names[bi]+'.';
-  try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(txt+(st.src==='lidar'?'':' Relative Schätzung.'));u.lang='de-DE';speechSynthesis.speak(u)}catch(e){}}
+  try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(txt+(st.src==='lidar'?(st.objText?' '+st.objText+'.':''):' Relative Schätzung.'));u.lang='de-DE';speechSynthesis.speak(u)}catch(e){}}
 $('say').onclick=say;
 
 /* ---------- Kamera / Testbild ---------- */
@@ -173,7 +178,27 @@ function analyse(dm){const {v,w,h}=dm;const sample=[];for(let i=0;i<v.length;i+=
   c.putImageData(img,0,0);
   const bars=$('zones').children;for(let i=0;i<COLS;i++){const n=st.near[i];bars[i].style.height=Math.round(4+96*n)+'%';bars[i].className=n>0.85?'vnear':n>0.6?'near':''}}
 const b64f32=x=>{const b=atob(x),u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return new Float32Array(u.buffer)};
-let lidarT=[];
+let lidarT=[];const persHist=[];let persShown=-1,persSaid=-1,persSince=0;
+const dirName=x=>['ganz links','links','leicht links','geradeaus','leicht rechts','rechts','ganz rechts'][Math.max(0,Math.min(6,Math.floor(x*7)))];
+const DE={chair:'Stuhl',table:'Tisch',desk:'Schreibtisch',sofa:'Sofa',couch:'Sofa',bed:'Bett',door:'Tür',doorway:'Türöffnung',window:'Fenster',stairs:'Treppe',staircase:'Treppe',step:'Stufe',computer:'Computer',monitor:'Bildschirm',screen:'Bildschirm',television:'Fernseher',laptop:'Laptop',keyboard:'Tastatur',bookshelf:'Bücherregal',shelf:'Regal',cabinet:'Schrank',wardrobe:'Kleiderschrank',drawer:'Schublade',refrigerator:'Kühlschrank',fridge:'Kühlschrank',oven:'Backofen',stove:'Herd',sink:'Spüle',toilet:'Toilette',bathtub:'Badewanne',shower:'Dusche',plant:'Pflanze',houseplant:'Pflanze',flower:'Blume',lamp:'Lampe',bottle:'Flasche',cup:'Tasse',mug:'Becher',glass:'Glas',bag:'Tasche',handbag:'Handtasche',backpack:'Rucksack',suitcase:'Koffer',shoes:'Schuhe',footwear:'Schuhe',box:'Karton',cardboard:'Karton',car:'Auto',bicycle:'Fahrrad',dog:'Hund',cat:'Katze',people:'Person',person:'Person',book:'Buch',clock:'Uhr',mirror:'Spiegel',curtain:'Vorhang',radiator:'Heizkörper',kitchen:'Küche',bathroom:'Badezimmer',bedroom:'Schlafzimmer',office:'Büro',hallway:'Flur',chandelier:'Leuchter',pillow:'Kissen',blanket:'Decke',rug:'Teppich',carpet:'Teppich',trash:'Mülleimer',bin:'Behälter',bucket:'Eimer',ladder:'Leiter',umbrella:'Schirm',phone:'Telefon',printer:'Drucker',fan:'Ventilator',heater:'Heizgerät',vehicle:'Fahrzeug',tree:'Baum',bench:'Bank',pole:'Pfosten',fence:'Zaun',cable:'Kabel'};
+function deName(id){if(DE[id])return DE[id];const parts=id.toLowerCase().split(/[_\s]+/);for(let i=parts.length-1;i>=0;i--)if(DE[parts[i]])return DE[parts[i]];return id.replace(/_/g,' ')}
+let objSaid='',objSince=0,objCand='',objLastSay=0;
+function showObjects(f){const box=$('objBox');if(!f.objects){box.style.display='none';return}box.style.display='flex';
+  const groups=[[0,1],[2,3,4],[5,6]],dn=['links','geradeaus','rechts'];const fm=d=>!isFinite(d)?'':(d<1?' '+Math.round(d*100)+' cm':' '+d.toFixed(1).replace('.',',')+' m');
+  const parts=[];let center='';
+  for(const o of f.objects){const lab=o.labels&&o.labels[0];if(!lab)continue;const ds=groups[o.dir].map(i=>st.dist[i]).filter(isFinite);const d=ds.length?Math.min(...ds):NaN;
+    const name=deName(lab[0]);const q=lab[1]>0.6?'':' (unsicher)';parts.push(dn[o.dir]+': '+name+fm(d)+q);if(o.dir===1)center=name+(isFinite(d)?','+fm(d).replace(' cm',' Zentimeter').replace(' m',' Meter'):'')}
+  $('objTxt').textContent=parts.length?parts.join(' · '):'Nichts sicher erkannt.';st.objText=parts.join('. ');
+  const now=performance.now();if(center!==objCand){objCand=center;objSince=now}
+  if(st.mode.obj&&center&&center.split(',')[0]!==objSaid.split(',')[0]&&now-objSince>1500&&now-objLastSay>4000&&st.on){objSaid=center;objLastSay=now;try{if(!speechSynthesis.speaking){const u=new SpeechSynthesisUtterance('Geradeaus: '+center+'.');u.lang='de-DE';speechSynthesis.speak(u)}}catch(e){}}}
+function showPersons(f){showObjects(f);const box=$('pers');if(!f.persons){box.style.display='none';return}box.style.display='flex';
+  const list=f.persons.filter(p=>p[5]>=0.5&&(p[4]<0||p[4]<=6));persHist.push(list.length);if(persHist.length>5)persHist.shift();
+  const n=[...persHist].sort((a,b)=>a-b)[persHist.length>>1];$('persN').textContent=n;$('persHead').textContent=n===1?'Person im Sichtfeld':'Personen im Sichtfeld';
+  const fm=d=>d<0?'Abstand ?':(d<1?Math.round(d*100)+' cm':d.toFixed(1).replace('.',',')+' m');
+  $('persTxt').textContent=list.length?list.slice().sort((a,b)=>(a[4]<0?99:a[4])-(b[4]<0?99:b[4])).map(p=>fm(p[4])+' '+dirName(p[0])).join(' · '):'Kamera + LiDAR, bis ca. 5 m';
+  const cv=$('depth'),c=cv.getContext('2d');c.strokeStyle='#C9A2FF';c.lineWidth=1.5;for(const p of list)c.strokeRect((p[0]-p[2]/2)*cv.width,(p[1]-p[3]/2)*cv.height,p[2]*cv.width,p[3]*cv.height);
+  const now=performance.now();if(n!==persShown){persShown=n;persSince=now}
+  if(n!==persSaid&&now-persSince>1500&&st.on){persSaid=n;try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(n===0?'Keine Person im Sichtfeld.':n===1?'Eine Person, '+(list[0]?fm(list[0][4]).replace('cm',' Zentimeter').replace(' m',' Meter')+', '+dirName(list[0][0]):'')+'.':n+' Personen im Sichtfeld.');u.lang='de-DE';speechSynthesis.speak(u)}catch(e){}if(n>0&&NATIVE)NATIVE.post({cmd:'haptic',style:'light'})}}
 function analyseLidar(f){const v=b64f32(f.data),w=f.w,h=f.h;st.w=w;st.h=h;
   const H=f.floor&&f.hgt?b64f32(f.hgt):null,D=f.hd?b64f32(f.hd):null;st.floorKnown=!!H;st.drop=st.drop||new Array(COLS).fill(false);
   const y0=Math.floor(h*0.1),y1=Math.floor(h*0.62);
@@ -188,7 +213,7 @@ function analyseLidar(f){const v=b64f32(f.data),w=f.w,h=f.h;st.w=w;st.h=h;
     if(H&&H[i]>-900){const hh=H[i];if(hh<-0.12){img.data[j]=255;img.data[j+1]=40;img.data[j+2]=60;continue}if(hh<=0.05){img.data[j]=10;img.data[j+1]=70;img.data[j+2]=70;continue}}
     const dd=D&&H?D[i]:d;const n=Math.max(0,Math.min(1,(4-dd)/3.7));
     if(n<0.5){img.data[j]=20+40*n;img.data[j+1]=40+200*n;img.data[j+2]=120+160*n}else{const t=(n-0.5)*2;img.data[j]=60+195*t;img.data[j+1]=140+36*t-100*t*t;img.data[j+2]=200-180*t}}
-  c.putImageData(img,0,0);
+  c.putImageData(img,0,0);showPersons(f);
   const bars=$('zones').children;for(let i=0;i<COLS;i++){const n=st.near[i];bars[i].style.height=Math.round(4+96*n)+'%';bars[i].className=st.drop[i]||st.dist[i]<0.7?'vnear':st.dist[i]<1.3?'near':''}
   const now=performance.now();lidarT.push(now);while(lidarT.length&&lidarT[0]<now-2000)lidarT.shift();
   $('badge').textContent='LiDAR · '+(lidarT.length/2).toFixed(0)+' Bilder/s · Boden '+(H?'erkannt'+(f.camH?' ('+f.camH.toFixed(2).replace('.',',')+' m unter Handy)':''):'noch nicht erkannt')+' · Tracking: '+f.tracking;
@@ -213,7 +238,7 @@ async function loop(sid){
 setInterval(()=>{if(st.on)sonify()},60);
 
 /* ---------- Start / Stop ---------- */
-function stop(reason,bad){if(NATIVE){try{NATIVE.post({cmd:'depthStop'});NATIVE.on.depth=null}catch(e){}}st.dist.fill(NaN);st.on=false;st.sid++;if(st.stream){st.stream.getTracks().forEach(t=>t.stop());st.stream=null}$('vid').srcObject=null;
+function stop(reason,bad){$('pers').style.display='none';$('objBox').style.display='none';objSaid='';persHist.length=0;persSaid=-1;if(NATIVE){try{NATIVE.post({cmd:'depthStop'});NATIVE.on.depth=null}catch(e){}}st.dist.fill(NaN);st.on=false;st.sid++;if(st.stream){st.stream.getTracks().forEach(t=>t.stop());st.stream=null}$('vid').srcObject=null;
   if(st.ctx){try{st.ctx.close()}catch(e){}st.ctx=null}try{speechSynthesis.cancel()}catch(e){}
   $('go').textContent='Raumsicht starten';$('go').classList.remove('stop');st.near.fill(0);[...$('zones').children].forEach(b=>{b.style.height='4%';b.className=''});
   const c=$('depth');c.getContext('2d').clearRect(0,0,c.width,c.height);$('badge').textContent='–';setState(bad?'Unterbrochen':'Beendet',bad?'bad':'',reason||'')}
