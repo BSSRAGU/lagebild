@@ -88,10 +88,10 @@ html.amode .panel{background:none}html.amode .panel .go,html.amode .panel .sec{m
     <ul>
       <li><b>Frontkamera (empfohlen):</b> Das Display zeigt zu dir. Du siehst den Rahmen zum Ausrichten, den Rundenzähler und dein Tempo nach jedem Schlag.</li>
       <li><b>Nicht hinter den Sack</b>, sondern seitlich davon: Kamera schräg von vorn (ca. 45°) auf dich, der Sack am Bildrand. Sonst verdeckt der Sack Fäuste und Beine.</li>
-      <li><b>Abstand 2,5–3 m</b> zu dir, <b>Höhe 1,0–1,2 m</b> (Hüfte bis Bauchnabel), Handy <b>senkrecht</b> und nicht geneigt. Ganzer Körper im Bild – Kopf und Füße mit etwas Rand.</li>
+      <li><b>Abstand etwa 2–4 m</b>, Höhe ungefähr Hüfte, Handy möglichst senkrecht. Beim Start erscheint ein <b>Rahmen</b>: Stell dich so hin, dass du von Kopf bis Fuß darin bist. Der genaue Abstand ist egal – der Maßstab wird gemessen, und die Kamera zoomt selbst heran, wenn du klein im Bild bist.</li>
       <li>Bei Linksauslage steht die Kamera am besten <b>links vor dir</b> (Führhandseite), bei Rechtsauslage rechts vor dir.</li>
       <li><b>Helles Licht.</b> Bei 240 Bildern/s ist die Belichtung kurz; im Halbdunkel verwischen Fäuste.</li>
-      <li>Einmal <b>gerade hinstellen</b> und „Kalibrieren“ tippen (2 s) – daraus wird der Maßstab in Metern.</li>
+      <li>Wenn der Rahmen grün ist, <b>2 Sekunden gerade stehen</b> – daraus wird der Maßstab in Metern. Danach startet die Runde.</li>
     </ul>
   </div>
   <div class="card">
@@ -153,7 +153,7 @@ function setState(t,c){const e=$('state');e.textContent=t;e.className='state'+(c
 // Nase bis Knöchelmitte ≈ 0,89 × Körpergröße (aufrecht stehend)
 function spanPx(p){if(p[J.nose*3+2]<0.3||p[J.lAn*3+2]<0.3||p[J.rAn*3+2]<0.3)return null;const ax=(p[J.lAn*3]+p[J.rAn*3])/2,ay=(p[J.lAn*3+1]+p[J.rAn*3+1])/2;return Math.hypot(ax-p[J.nose*3],ay-p[J.nose*3+1])}
 function mpp(){if(S.calib)return S.calib;if(S.spans.length<10)return null;const a=[...S.spans].sort((x,y)=>x-y);return 0.89*S.H/a[Math.floor(a.length*0.8)]}
-$('cal').onclick=()=>{if(A.phase==='align'||A.phase==='calib'){alignSkip();return}if(!S.on){setState('Erst starten, dann gerade hinstellen und Kalibrieren tippen.','bad');return}S.calibSpans=[];S.calibUntil=S.lastT+2;setState('Kalibriere … 2 Sekunden gerade und ruhig stehen.')};
+$('cal').onclick=()=>{if(A.phase==='align'||A.phase==='calib'||A.phase==='zoom'){alignSkip();return}if(!S.on){setState('Erst starten, dann gerade hinstellen und Kalibrieren tippen.','bad');return}S.calibSpans=[];S.calibUntil=S.lastT+2;setState('Kalibriere … 2 Sekunden gerade und ruhig stehen.')};
 
 /* ---------- Daten ---------- */
 // Probe: {t, p: Float32Array(45) in Bildpunkten (x rechts, y unten)}
@@ -228,49 +228,62 @@ $('aList').innerHTML=CHECKS.map(([k,l])=>'<li id="ac_'+k+'">'+l+'</li>').join(''
 window.addEventListener('deviceorientation',e=>{if(e.beta!=null)A.ori={beta:e.beta,gamma:e.gamma,t:performance.now()}});
 function askMotion(){try{if(window.DeviceOrientationEvent&&typeof DeviceOrientationEvent.requestPermission==='function')DeviceOrientationEvent.requestPermission().catch(()=>{})}catch(e){}}
 const TAN_V=Math.tan(34.5*Math.PI/180),TARGET_D=2.7;
-// Soll-Rahmen: so groß und dort, wo der Körper bei 2,5–3 m Abstand und Kamera auf Hüfthöhe erscheint
-const SOLL={hip:0.55,span:0.50};
-function sollBox(){const hb=SOLL.span/0.89,y1=SOLL.hip+0.53*hb,y0=y1-hb,hw=0.21*hb*S.vh/S.vw;return{x0:0.5-hw,x1:0.5+hw,y0,y1}}
-const BLOCK=['person','tilt','full','dist','center','height'];
-function evalAlign(h){const r={},vw=S.vw,vh=S.vh,q=j=>[h.p[j*3]/vw,h.p[j*3+1]/vh],c=j=>h.p[j*3+2];
+// Rahmen = Bereich, in dem der ganze Körper zu sehen sein muss (zwischen Kopfzeile und Tasten, im sichtbaren Bildteil).
+// Die Größe im Bild ist egal: Der Maßstab wird gemessen, und die Kamera zoomt selbst heran, wenn du klein im Bild bist.
+const CAN_ZOOM=!!(NATIVE&&NATIVE.caps&&NATIVE.caps.poseZoom);
+function sollBox(){const x0=Math.max(0.03,(S.visX0==null?0.1:S.visX0)+0.03),x1=Math.min(0.97,(S.visX1==null?0.9:S.visX1)-0.03);return{x0,x1,y0:0.19,y1:0.92}}
+const BLOCK=['person','tilt','dist','full','center'];
+function evalAlign(h){const r={},vw=S.vw,vh=S.vh,q=j=>[h.p[j*3]/vw,h.p[j*3+1]/vh],c=j=>h.p[j*3+2],Z=sollBox();
   const seen=[J.nose,J.lSh,J.rSh,J.lHip,J.rHip,J.lAn,J.rAn].filter(j=>c(j)>0.3).length;
   r.person=seen>=6?{ok:true}:{ok:false,word:'Ganz ins Bild',say:'Ich sehe dich nicht vollständig. Stell dich so hin, dass Kopf und Füße im Rahmen sind.'};
   if(A.ori&&performance.now()-A.ori.t<2000){const b=A.ori.beta,g=A.ori.gamma;
-    r.tilt=Math.abs(b-90)<=10&&Math.abs(g)<=8?{ok:true}:{ok:false,cam:true,word:'Handy gerade',say:Math.abs(g)>8?'Das Handy steht schief. Seitlich gerade ausrichten.':b<80?'Das Handy kippt nach hinten. Oben etwas nach vorn neigen, bis es senkrecht steht.':'Das Handy kippt nach vorn. Oben etwas nach hinten neigen, bis es senkrecht steht.'}}
+    r.tilt=Math.abs(b-90)<=15&&Math.abs(g)<=10?{ok:true}:{ok:false,cam:true,word:'Handy gerade',say:Math.abs(g)>10?'Das Handy steht schief. Seitlich gerade ausrichten.':b<75?'Das Handy kippt stark nach hinten. Aufrechter stellen.':'Das Handy kippt stark nach vorn. Aufrechter stellen.'}}
   else r.tilt={ok:true,na:true};
   if(!r.person.ok)return r;
   const nose=q(J.nose),an=[(q(J.lAn)[0]+q(J.rAn)[0])/2,Math.max(q(J.lAn)[1],q(J.rAn)[1])],hip=[(q(J.lHip)[0]+q(J.rHip)[0])/2,(q(J.lHip)[1]+q(J.rHip)[1])/2];
-  const headTop=nose[1]-(an[1]-nose[1])*0.07/0.89;// Scheitel ca. 7 % der Körpergröße über der Nase
-  const hw=0.21*(an[1]-headTop)*vh/vw;r.box={x0:hip[0]-hw,x1:hip[0]+hw,y0:headTop,y1:an[1]};
-  const span=an[1]-nose[1],frameM=0.89*S.H/Math.max(0.05,span),dist=frameM/(2*TAN_V);
-  r.full=span<=0.62&&headTop<0.03?{ok:false,cam:true,word:'Kopf fehlt',say:'Der Kopf ist abgeschnitten. Kamera höher stellen oder einen Schritt zurück.'}:span<=0.62&&an[1]>0.96?{ok:false,cam:true,word:'Füße fehlen',say:'Die Füße sind abgeschnitten. Kamera tiefer stellen oder einen Schritt zurück.'}:{ok:true};
-  r.dist=span>0.62?{ok:false,word:'Zurück',say:'Zu nah. Geh etwa '+fmt(Math.max(0.5,TARGET_D-dist),1)+' Meter zurück, bis du in den Rahmen passt.'}:span<0.38?{ok:false,word:'Näher',say:'Zu weit weg. Komm etwa '+fmt(Math.max(0.5,dist-TARGET_D),1)+' Meter näher, bis du den Rahmen füllst.'}:{ok:true};
+  const span=an[1]-nose[1],hb=span/0.89,headTop=nose[1]-span*0.07/0.89;// Scheitel ca. 7 % der Körpergröße über der Nase
+  const hw=0.21*hb*vh/vw,reach=0.36*hb*vh/vw;// halbe Körperbreite, Reichweite von Arm und Bein zur Seite
+  r.box={x0:hip[0]-hw,x1:hip[0]+hw,y0:headTop,y1:an[1],hip,reach};
+  const frameM=0.89*S.H/Math.max(0.05,span),dist=frameM/(2*TAN_V)/(S.zoom||1);
+  const zh=Z.y1-Z.y0,zw=Z.x1-Z.x0;
+  r.dist=hb>zh||2*reach>zw?{ok:false,word:'Zurück',say:'Du bist zu nah. Geh zurück, bis du ganz in den Rahmen passt.'}:span<0.2?{ok:false,word:'Näher',say:'Du bist zu weit weg. Komm näher.'}:{ok:true};
   r.dist.info='Abstand ca. '+fmt(dist,1)+' m';
-  // seitlich: Pfeil zeigt auf dem Display zum Rahmen. Frontkamera = Spiegel (gleiche Seite), Rückkamera = seitenverkehrt aus Sicht des Sportlers
+  r.full=headTop<Z.y0?{ok:false,cam:true,word:'Kopf fehlt',say:'Der Kopf ist nicht im Rahmen. Kamera etwas nach oben richten oder einen Schritt zurück.'}:an[1]>Z.y1?{ok:false,cam:true,word:'Füße fehlen',say:'Die Füße sind nicht im Rahmen. Kamera etwas nach unten richten oder einen Schritt zurück.'}:{ok:true};
+  // seitlich: Pfeil zeigt auf dem Display in den Rahmen. Frontkamera = Spiegel (gleiche Seite), Rückkamera = seitenverkehrt aus Sicht des Sportlers
   const side=dir=>S.mirror?dir:(dir==='rechts'?'links':'rechts');
-  r.center=hip[0]<0.37?{ok:false,arrow:'right',word:'Nach '+side('rechts'),say:'Einen Schritt nach '+side('rechts')+'.'}:hip[0]>0.63?{ok:false,arrow:'left',word:'Nach '+side('links'),say:'Einen Schritt nach '+side('links')+'.'}:{ok:true};
-  const dy=(hip[1]-SOLL.hip)*frameM,tol=r.tilt.na?0.3:0.2;// Hüfte soll leicht unter der Bildmitte liegen (Kamera ca. 1,0–1,2 m hoch)
-  r.height=Math.abs(dy)<=tol?{ok:true}:{ok:false,cam:true,word:dy>0?'Kamera tiefer':'Kamera höher',say:dy>0?'Die Kamera steht zu hoch. Etwa '+Math.round(Math.abs(dy)*100/5)*5+' Zentimeter tiefer, ungefähr auf Hüfthöhe.':'Die Kamera steht zu tief. Etwa '+Math.round(Math.abs(dy)*100/5)*5+' Zentimeter höher, ungefähr auf Hüfthöhe.'};
+  r.center=hip[0]-reach<Z.x0?{ok:false,arrow:'right',word:'Nach '+side('rechts'),say:'Einen Schritt nach '+side('rechts')+'.'}:hip[0]+reach>Z.x1?{ok:false,arrow:'left',word:'Nach '+side('links'),say:'Einen Schritt nach '+side('links')+'.'}:{ok:true};
   // Hinweise (halten den Start nicht auf)
+  const dy=(hip[1]-0.55)*frameM;r.height=Math.abs(dy)<=0.35?{ok:true}:{ok:false,hint:dy>0?'Kamera steht eher hoch – Hüfthöhe misst genauer':'Kamera steht eher tief – Hüfthöhe misst genauer'};
   const shM=Math.hypot((q(J.lSh)[0]-q(J.rSh)[0])*vw/vh,q(J.lSh)[1]-q(J.rSh)[1])*frameM,ang=Math.acos(Math.min(1,shM/(0.2*S.H)))*180/Math.PI;
   r.angle=ang<22?{ok:false,hint:'Kamera steht sehr frontal – schräg von vorn misst genauer'}:ang>70?{ok:false,hint:'Kamera steht sehr seitlich – schräg von vorn misst genauer'}:{ok:true};
   const conf=[J.lWr,J.rWr,J.lEl,J.rEl,J.lAn,J.rAn].reduce((a,j)=>a+c(j),0)/6;
   r.light=conf<0.45?{ok:false,hint:'Bild dunkel oder unscharf – mehr Licht'}:{ok:true};
   return r}
-function alignTick(){if(A.phase!=='align'&&A.phase!=='calib')return;const h=S.hist[S.hist.length-1];if(!h)return;const now=performance.now();if(now-A.t<150)return;A.t=now;
+// Zoom so wählen, dass der Körper den Rahmen gut füllt, aber mit Reichweite ganz darin bleibt (Zoom um die Bildmitte)
+function zoomFor(b){const Z=sollBox(),lim=[4,0.62/Math.max(0.05,b.y1-b.y0)];
+  if(b.y0<0.5)lim.push((0.5-(Z.y0+0.02))/(0.5-b.y0));if(b.y1>0.5)lim.push(((Z.y1-0.02)-0.5)/(b.y1-0.5));
+  lim.push((0.5-(Z.x0+0.01))/Math.max(0.02,Math.abs(b.hip[0]-0.5)+b.reach));return Math.max(1,Math.min(...lim))}
+function setZoom(z){S.zoom=z;S.spans=[];S.calib=null;try{NATIVE.post({cmd:'poseZoom',z})}catch(e){}}
+function alignTick(){if(A.phase==='off'||A.phase==='done')return;const h=S.hist[S.hist.length-1];if(!h)return;const now=performance.now();if(now-A.t<150)return;A.t=now;
   const r=evalAlign(h);A.vis=A.vis||{};A.vis.ist=r.box||null;
+  if(A.phase==='zoom'){A.vis.color='#FFB020';A.vis.prog=Math.min(1,(now-A.zoomT)/1200);if(now-A.zoomT>1200){A.phase='align';A.okSince=now-900;A.zoomed=true}return}
   if(A.phase==='calib'){A.vis.color='#FFB020';A.vis.arrow=null;A.vis.prog=Math.max(0,Math.min(1,1-(S.calibUntil-S.lastT)/2));
     if(!S.calib&&S.lastT>S.calibUntil+0.6){A.phase='align';A.okSince=0;say('Das hat nicht geklappt. Ganzer Körper muss sichtbar sein.');return}
     if(S.calib&&!S.calibSpans.length&&S.lastT>S.calibUntil){A.phase='done';A.vis.color='#3DDC84';A.vis.prog=1;$('aMsg').textContent='Los!';$('aMsg').className='msg ok';$('aSub').textContent='Ausgangsposition einnehmen';say('Fertig. Ausgangsposition.');setTimeout(()=>{if(A.phase==='done')alignDone()},1800)}return}
   let first=null;for(const k of BLOCK){const x=r[k];if(x&&!x.ok){first=x;break}}
   for(const [k] of CHECKS){const li=$('ac_'+k),x=r[k];li.className=!x||x.na?'':x.ok?'ok':'no'}
-  const hints=['angle','light'].map(k=>r[k]&&r[k].hint).filter(Boolean);
-  $('aSub').textContent=first?(first.cam?'Kamera anpassen':'Stell dich in den Rahmen')+(r.dist&&r.dist.info?' · '+r.dist.info:''):(hints[0]||(r.dist&&r.dist.info)||'');
-  if(!first){if(!A.okSince)A.okSince=now;const el=(now-A.okSince)/1000;A.vis.color='#3DDC84';A.vis.arrow=null;A.vis.prog=Math.min(1,el/2);$('aMsg').textContent='Passt – bleib so';$('aMsg').className='msg ok';
-    if(el>=2){A.phase='calib';S.calib=null;S.calibSpans=[];S.calibUntil=S.lastT+2;A.vis.prog=0;$('aMsg').textContent='Gerade stehen';$('aMsg').className='msg cal';$('aSub').textContent='2 Sekunden aufrecht und ruhig – Maßstab wird gemessen';say('Passt. Jetzt zwei Sekunden gerade stehen.')}}
+  const hints=['light','angle','height'].map(k=>r[k]&&r[k].hint).filter(Boolean);
+  $('aSub').textContent=first?(first.cam?'Kamera anpassen':'Stell dich in den Rahmen'):(hints[0]||(r.dist&&r.dist.info)||'');
+  if(!first){if(!A.okSince)A.okSince=now;const el=(now-A.okSince)/1000;A.vis.color='#3DDC84';A.vis.arrow=null;A.vis.prog=Math.min(1,el/1.5);$('aMsg').textContent='Passt – bleib so';$('aMsg').className='msg ok';
+    if(el>=1.5){const z=CAN_ZOOM&&!A.zoomed&&S.src==='native'?zoomFor(r.box)*(S.zoom||1):1;
+      if(z>(S.zoom||1)*1.15){A.phase='zoom';A.zoomT=now;A.vis.prog=0;setZoom(Math.min(4,z));$('aMsg').textContent='Kamera zoomt';$('aMsg').className='msg cal';$('aSub').textContent='Bleib stehen – das Bild wird auf dich eingestellt';return}
+      A.phase='calib';S.calib=null;S.calibSpans=[];S.calibUntil=S.lastT+2;A.vis.prog=0;$('aMsg').textContent='Gerade stehen';$('aMsg').className='msg cal';$('aSub').textContent='2 Sekunden aufrecht und ruhig – Maßstab wird gemessen';say('Passt. Jetzt zwei Sekunden gerade stehen.')}}
   else{A.okSince=0;A.vis.color='#FF5A5F';A.vis.arrow=first.arrow||null;A.vis.prog=0;$('aMsg').textContent=first.word;$('aMsg').className='msg bad';
-    if(now-A.lastSay>4500||(first.say!==A.lastMsg&&now-A.lastSay>2000)){A.lastSay=now;A.lastMsg=first.say;say(first.say)}}}
-function startFlow(){if(A.on){A.phase='align';A.okSince=0;A.lastSay=0;A.lastMsg='';A.vis={color:'#FF5A5F'};document.documentElement.classList.add('amode');$('cal').textContent='Überspringen';$('aMsg').textContent='In den Rahmen';$('aMsg').className='msg bad';$('aSub').textContent='Stell dich so hin, dass du den Rahmen füllst';say('Stell dich in den Rahmen.')}else roundsStart()}
+    // herangezoomt und Sportler passt nicht mehr: Zoom zurücknehmen
+    if(A.zoomed&&(S.zoom||1)>1&&(first===r.dist||first===r.full||first===r.center||first===r.person)){if(!A.badSince)A.badSince=now;if(now-A.badSince>1500){setZoom(1);A.zoomed=false;A.badSince=0}}
+    if(now-A.lastSay>4500||(first.say!==A.lastMsg&&now-A.lastSay>2000)){A.lastSay=now;A.lastMsg=first.say;say(first.say)}}
+  if(!first)A.badSince=0}
+function startFlow(){S.zoom=1;A.zoomed=false;A.badSince=0;if(A.on){A.phase='align';A.okSince=0;A.lastSay=0;A.lastMsg='';A.vis={color:'#FF5A5F'};document.documentElement.classList.add('amode');$('cal').textContent='Überspringen';$('aMsg').textContent='In den Rahmen';$('aMsg').className='msg bad';$('aSub').textContent='Kopf bis Fuß in den Rahmen – der Abstand ist egal';say('Stell dich in den Rahmen.')}else roundsStart()}
 function alignDone(){A.phase='off';document.documentElement.classList.remove('amode');$('cal').textContent='Kalibrieren';roundsStart()}
 function alignSkip(){if(S.calibUntil>S.lastT)S.calibUntil=0;S.calibSpans=[];alignDone()}
 // Zeichnet Rahmen, Pfeile und Fortschritt (groß, aus 3 m erkennbar)
@@ -370,7 +383,8 @@ function draw(){requestAnimationFrame(draw);const dpr=Math.min(2,devicePixelRati
   const s=Math.max(W/S.vw,H/S.vh),ox=(W-S.vw*s)/2,oy=(H-S.vh*s)/2,X=x=>ox+x*s,Y=y=>oy+y*s;
   if(S.src==='demo'){c.fillStyle='#0B1220';c.fillRect(0,0,W,H);c.strokeStyle='rgba(120,150,190,.15)';c.beginPath();c.moveTo(0,Y(S.vh*0.86));c.lineTo(W,Y(S.vh*0.86));c.stroke()}
   const h=S.hist[S.hist.length-1];
-  if(A.phase==='align'||A.phase==='calib'||A.phase==='done')drawAlign(c,W,H,X,Y);
+  S.visX0=(0-ox)/s/S.vw;S.visX1=(W-ox)/s/S.vw;
+  if(A.phase==='align'||A.phase==='calib'||A.phase==='zoom'||A.phase==='done')drawAlign(c,W,H,X,Y);
   if(h){c.lineWidth=4;c.lineCap='round';for(const [a,b] of BONES){if(C(h,a)<0.2||C(h,b)<0.2)continue;c.strokeStyle=a===1&&b===8?'rgba(255,255,255,.6)':'rgba(53,224,200,.85)';c.beginPath();c.moveTo(X(h.p[a*3]),Y(h.p[a*3+1]));c.lineTo(X(h.p[b*3]),Y(h.p[b*3+1]));c.stroke()}
     for(const j of [J.lWr,J.rWr,J.lAn,J.rAn])if(C(h,j)>0.2){c.fillStyle='#FFB020';c.beginPath();c.arc(X(h.p[j*3]),Y(h.p[j*3+1]),6,0,7);c.fill()}}
   // letzter Schlag: Bahn nach Tempo eingefärbt, verblasst nach 2 s
@@ -386,7 +400,7 @@ const b64f=s=>{const b=atob(s),u=new Uint8Array(b.length);for(let i=0;i<b.length
 function startNative(){S.src='native';S.on=true;S.hist=[];S.state={};S.tStart=0;document.documentElement.classList.add('cam');
   NATIVE.on.poseStarted=d=>{S.cam=d.fps;S.mirror=!!d.front;if(d.w){S.vw=d.w;S.vh=d.h}setState((d.front?'Frontkamera':'Rückkamera')+' läuft mit bis zu '+d.fps+' Bildern/s. '+(A.on?'':S.calib?'':'Gerade hinstellen, dann Kalibrieren.'),'good')};
   NATIVE.on.poseError=d=>{stop();setState(d.message,'bad')};
-  NATIVE.on.pose=d=>{if(!S.on)return;if(d.front!=null)S.mirror=!!d.front;if(d.w){S.vw=d.w;S.vh=d.h}S.fps=d.fps;S.cam=d.cam;const a=b64f(d.d),n=d.stride;for(let i=0;i+n<=a.length;i+=n){if(!S.tStart)S.tStart=a[i]||1e-6;ingest(a[i],a.subarray(i+1,i+n))}};
+  NATIVE.on.pose=d=>{if(!S.on)return;if(d.front!=null)S.mirror=!!d.front;if(d.zoom)S.zoom=d.zoom;if(d.w){S.vw=d.w;S.vh=d.h}S.fps=d.fps;S.cam=d.cam;const a=b64f(d.d),n=d.stride;for(let i=0;i+n<=a.length;i+=n){if(!S.tStart)S.tStart=a[i]||1e-6;ingest(a[i],a.subarray(i+1,i+n))}};
   S.mirror=false;NATIVE.post({cmd:'poseStart',fps:240,front:CAN_FRONT&&S.cam0==='front'});startFlow();$('go').textContent='Stopp';$('go').classList.add('stop');setState('Kamera startet …')}
 function stop(){if(S.src==='native'&&NATIVE){try{NATIVE.post({cmd:'poseStop'})}catch(e){}}if(S.demoTimer){clearInterval(S.demoTimer);S.demoTimer=null}
   alignStop();roundsStop();S.on=false;document.documentElement.classList.remove('cam','run');$('go').textContent=CAN?'Start':'Vorführung starten';$('go').classList.remove('stop');setState('Angehalten')}
