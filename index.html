@@ -151,7 +151,7 @@ nav button.run .dot{visibility:visible}
   <div class="hint" id="fMapHint">Karte und Flugdaten starten mit „Mithören starten“. Flugzeugpositionen stammen aus ADS-B-Daten (adsb.lol), Kennung und Route aus adsbdb.com. Der Standort wird nur aus Ton und Flugdaten berechnet – GPS wird ausschließlich zum Vergleich angezeigt und protokolliert.</div>
   <div class="row" style="margin-top:10px"><button class="sec" id="fLocBtn" aria-pressed="true" style="display:none">Standort aus Überflügen: an</button><button class="sec" id="fRegBtn">Suchregion: Deutschland</button></div>
   <div class="row" style="margin-top:8px"><button class="sec" id="fSimBtn">Testlauf mit simulierten Überflügen</button></div>
-  <div class="ticker" id="fLocBox"><h3>Standort aus Überflügen</h3><div id="fLoc">Warte auf den ersten gehörten Überflug …</div><div class="hint" id="fLocHint">Prinzip: Jeder Überflug erzeugt eine Lautstärkespitze. Ihr Zeitpunkt zeigt, wann das Flugzeug am nächsten war (Standort liegt auf einer Linie quer zur Flugspur), ihre Breite den Abstand. ADS-B liefert die Flugspuren. Überflüge auf verschiedenen Routen schneiden sich im Standort; Flugzeuge, die nah vorbeigeflogen wären, aber nicht zu hören waren, schließen Orte aus. Ein Frequenzabfall (Doppler) wird zusätzlich genutzt. GPS dient nur zum Vergleich.</div></div>
+  <div class="ticker" id="fLocBox"><h3>Standort aus Überflügen</h3><div id="fLoc">Warte auf den ersten gehörten Überflug …</div><div class="hint" id="fStat" style="font-variant-numeric:tabular-nums"></div><div class="hint" id="fLocHint">Prinzip: Jeder Überflug erzeugt eine Lautstärkespitze. Ihr Zeitpunkt zeigt, wann das Flugzeug am nächsten war (Standort liegt auf einer Linie quer zur Flugspur), ihre Breite den Abstand. ADS-B liefert die Flugspuren. Überflüge auf verschiedenen Routen schneiden sich im Standort; Flugzeuge, die nah vorbeigeflogen wären, aber nicht zu hören waren, schließen Orte aus. Ein Frequenzabfall (Doppler) wird zusätzlich genutzt. GPS dient nur zum Vergleich.</div></div>
   <div class="ticker" id="fMatchBox" style="display:none"><h3>Gehörte Überflüge</h3><ul class="log" id="fMatch"></ul></div>
   <div class="ticker"><h3 id="fListHead">Flugzeuge in der Suchregion</h3><ul class="log" id="fList"><li><time>–</time><span>Noch keine Daten.</span><em></em></li></ul></div>
   <details class="diag"><summary>Gerätecheck</summary><dl id="fDiag"></dl></details>
@@ -246,11 +246,14 @@ $('lClear').onclick=()=>{events.length=0;renderLog();if(db){try{db.transaction('
 class Stale extends Error{}
 const S={cur:null,n:0};
 const MODES={};// prefix, ended(key,detail)
-function newSession(mode){if(S.cur)stopSession('beendet','Neue Sitzung gestartet.');
+let wakeLock=null;
+function keepAwake(on){try{if(NATIVE)NATIVE.post({cmd:'keepAwake',on:!!on})}catch(e){}
+  try{if(on){if(navigator.wakeLock&&!wakeLock)navigator.wakeLock.request('screen').then(w=>{wakeLock=w;w.addEventListener('release',()=>{wakeLock=null})}).catch(()=>{})}else if(wakeLock){wakeLock.release().catch(()=>{});wakeLock=null}}catch(e){}}
+function newSession(mode){if(S.cur)stopSession('beendet','Neue Sitzung gestartet.');keepAwake(true);
   const s={id:Date.now().toString(36)+'-'+(++S.n),mode,alive:true,running:false,tracks:[],nodes:[],ctx:null,timers:new Set(),listeners:[],onStop:[],t0:performance.now()};S.cur=s;syncButtons();return s}
 function sTimeout(s,fn,ms){const id=setTimeout(()=>{s.timers.delete(id);if(s.alive)fn()},ms);s.timers.add(id);return id}
 function sListen(s,target,ev,fn,opt){target.addEventListener(ev,fn,opt);s.listeners.push([target,ev,fn,opt])}
-function stopSession(key,detail){const s=S.cur;if(!s)return;s.alive=false;s.running=false;S.cur=null;
+function stopSession(key,detail){const s=S.cur;if(!s)return;s.alive=false;s.running=false;S.cur=null;keepAwake(false);
   s.onStop.forEach(f=>{try{f()}catch(e){}});s.timers.forEach(id=>clearTimeout(id));s.timers.clear();
   s.listeners.forEach(([t,e,f,o])=>{try{t.removeEventListener(e,f,o)}catch(x){}});s.listeners=[];
   s.nodes.forEach(n=>{try{n.port&&n.port.postMessage({cmd:'stop'})}catch(e){}try{n.port&&(n.port.onmessage=null)}catch(e){}try{n.stop&&n.stop()}catch(e){}try{n.disconnect()}catch(e){}});s.nodes=[];
@@ -663,7 +666,7 @@ function loadLeaflet(){if(window.L)return Promise.resolve();return new Promise((
 const toRad=d=>d*Math.PI/180;
 function distM(a,b,c,d){const R=6371000,x=toRad(c-a),y=toRad(d-b),h=Math.sin(x/2)**2+Math.cos(toRad(a))*Math.cos(toRad(c))*Math.sin(y/2)**2;return 2*R*Math.asin(Math.sqrt(h))}
 function acIcon(track,hi){const col=hi?'#FF5A5F':'#FFB020';return L.divIcon({className:'',iconSize:[26,26],iconAnchor:[13,13],html:'<svg width="26" height="26" viewBox="0 0 26 26" style="transform:rotate('+(track||0)+'deg)"><path d="M13 2 L20 22 L13 17 L6 22 Z" fill="'+col+'" stroke="#070C16" stroke-width="1.5"/></svg>'})}
-function flStart(s){FL.s=s;AC.lev=[];AC.events=[];AC.res=null;AC.t0=Date.now();AC.sim=false;FL.polling=false;LOC.events=[];LOC.est=null;LOC.sim=false;$('fPosCard').style.display='none';FL.ac.clear();FL.best=null;HEARD.length=0;$('fMatchBox').style.display='none';
+function flStart(s){FL.s=s;FL.okLog=false;FL.errLog=0;AC.stat=null;AC.statT=Date.now();$('fStat').textContent='';AC.lev=[];AC.events=[];AC.res=null;AC.t0=Date.now();AC.sim=false;FL.polling=false;LOC.events=[];LOC.est=null;LOC.sim=false;$('fPosCard').style.display='none';FL.ac.clear();FL.best=null;HEARD.length=0;$('fMatchBox').style.display='none';
   loadLeaflet().then(()=>{if(!s.alive)return;
     if(!FL.map){FL.map=L.map('fMap').setView([51.16,10.45],6);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'© OpenStreetMap'}).addTo(FL.map);FL.layer=L.layerGroup().addTo(FL.map)}
     // Suche und Karte richten sich nach der Suchregion (zuletzt berechneter Standort oder von Hand gewählt) – nie nach GPS
@@ -683,8 +686,9 @@ function flPoll(){const s=FL.s;if(!s||!s.alive||FL.polling)return;FL.polling=tru
       let o=FL.ac.get(a.hex);if(!o){o={hex:a.hex,pts:[]};FL.ac.set(a.hex,o)}o.cs=(a.flight||'').trim();o.flight=o.cs||a.r||a.hex;o.type=a.t||'';o.reg=a.r||'';o.desc=a.desc||'';o.op=a.ownOp||'';o.sq=a.squawk||'';o.vr=typeof a.baro_rate==='number'?a.baro_rate:(typeof a.geom_rate==='number'?a.geom_rate:0);o.last=now;
       o.pts.push({t:now-(a.seen_pos||0)*1000,lat:a.lat,lon:a.lon,alt,gs:(a.gs||0)*0.5144,track:a.track||0});if(o.pts.length>160)o.pts.shift()}
     for(const [k,o] of FL.ac)if(now-o.last>20*60000)FL.ac.delete(k);
+    if(!FL.okLog){FL.okLog=true;logEvent('Überflug','Flugdaten geladen: '+FL.ac.size+' Flugzeuge unter 6 km Höhe im Umkreis von 460 km um „'+LOC.region.name+'“','ADS-B')}
     $('fMapHint').textContent=FL.ac.size+' tief fliegende Flugzeuge (unter 6 km) im Umkreis von 460 km um „'+LOC.region.name+'“ · Stand '+fmt(new Date())+' · Daten: adsb.lol, adsbdb.com · GPS nur Vergleich';flDraw()})
-  .catch(e=>{FL.err=e.message;$('fMapHint').textContent=(NATIVE&&NATIVE.caps&&NATIVE.caps.http)?'Flugdaten nicht abrufbar: '+e.message:'Flugdaten lassen sich nur in der Lagebild-App laden (der Browser blockiert den Abruf). Standort und Karte funktionieren.'})
+  .catch(e=>{FL.err=e.message;if(Date.now()-(FL.errLog||0)>120000){FL.errLog=Date.now();logEvent('Überflug','Flugdaten nicht abrufbar: '+e.message+(NATIVE&&NATIVE.caps&&NATIVE.caps.http?'':' (ohne App blockiert der Browser den Abruf)'),'Fehler')}$('fMapHint').textContent=(NATIVE&&NATIVE.caps&&NATIVE.caps.http)?'Flugdaten nicht abrufbar: '+e.message:'Flugdaten lassen sich nur in der Lagebild-App laden (der Browser blockiert den Abruf). Standort und Karte funktionieren.'})
   .finally(()=>{if(FL.s&&FL.s.alive)sTimeout(FL.s,()=>{FL.polling=false;flPoll()},LOC.on?8000:5000);else FL.polling=false})}
 /* ---------- Flugzeug-Steckbrief: Kennung, Typ, Fluggesellschaft, Route, Flugphase ---------- */
 const TYPES={A19N:'Airbus A319neo',A20N:'Airbus A320neo',A21N:'Airbus A321neo',A318:'Airbus A318',A319:'Airbus A319',A320:'Airbus A320',A321:'Airbus A321',A332:'Airbus A330-200',A333:'Airbus A330-300',A339:'Airbus A330-900neo',A343:'Airbus A340-300',A346:'Airbus A340-600',A359:'Airbus A350-900',A35K:'Airbus A350-1000',A388:'Airbus A380',BCS1:'Airbus A220-100',BCS3:'Airbus A220-300',B737:'Boeing 737-700',B738:'Boeing 737-800',B739:'Boeing 737-900',B37M:'Boeing 737 MAX 7',B38M:'Boeing 737 MAX 8',B39M:'Boeing 737 MAX 9',B744:'Boeing 747-400',B748:'Boeing 747-8',B752:'Boeing 757-200',B763:'Boeing 767-300',B772:'Boeing 777-200',B77W:'Boeing 777-300ER',B77L:'Boeing 777F',B788:'Boeing 787-8',B789:'Boeing 787-9',B78X:'Boeing 787-10',E170:'Embraer 170',E175:'Embraer 175',E190:'Embraer 190',E195:'Embraer 195',E290:'Embraer E190-E2',E295:'Embraer E195-E2',CRJ7:'Bombardier CRJ700',CRJ9:'Bombardier CRJ900',CRJX:'Bombardier CRJ1000',DH8D:'De Havilland Dash 8-400',AT75:'ATR 72-500',AT76:'ATR 72-600',AT45:'ATR 42-500',A400:'Airbus A400M (Militär)',C130:'Lockheed C-130 (Militär)',C17:'Boeing C-17 (Militär)',EUFI:'Eurofighter (Militär)',TOR:'Tornado (Militär)',A310:'Airbus A310',C172:'Cessna 172',C152:'Cessna 152',C182:'Cessna 182',PA28:'Piper PA-28',DA40:'Diamond DA40',DA42:'Diamond DA42',SR22:'Cirrus SR22',PC12:'Pilatus PC-12',C56X:'Cessna Citation Excel',C68A:'Cessna Citation Latitude',GLF6:'Gulfstream G650',CL35:'Bombardier Challenger 350',BE20:'Beechcraft King Air 200',EC35:'Airbus H135 (Hubschrauber)',EC45:'Airbus H145 (Hubschrauber)',H145:'Airbus H145 (Hubschrauber)',H135:'Airbus H135 (Hubschrauber)',EC30:'Airbus H130 (Hubschrauber)',EC55:'Airbus H155 (Hubschrauber)',BK17:'BK 117 (Hubschrauber)',A139:'AW139 (Hubschrauber)',R44:'Robinson R44 (Hubschrauber)',NH90:'NH90 (Hubschrauber, Militär)',H64:'AH-64 Apache (Militär)',CH47:'CH-47 Chinook (Militär)'};
@@ -801,7 +805,18 @@ function flSolve(){if(AC.res&&AC.res.n>=2)return;const evs=LOC.events.filter(e=>
    Gegenprobe: Flugzeuge, die nah und tief am Kandidatenpunkt vorbeigeflogen wären, aber nicht zu hören waren, sprechen dagegen.
    GPS wird nicht verwendet. */
 const AC={lev:[],events:[],t0:0,lastDet:0,res:null,sim:false,timer:null,truth:null};
-function acFeed(tms,L){const A=AC.lev;A.push({t:tms,L});while(A.length&&A[0].t<tms-20*60000)A.shift();if(tms-AC.lastDet>2000){AC.lastDet=tms;acDetect(tms)}}
+function acFeed(tms,L){const A=AC.lev;A.push({t:tms,L});while(A.length&&A[0].t<tms-20*60000)A.shift();if(tms-AC.lastDet>2000){AC.lastDet=tms;acDetect(tms);acStatus(tms)}}
+// Diagnose: zeigt live und schreibt jede Minute ins Protokoll, was das Mikrofon hört und welche Flugzeuge in Frage kämen.
+// Der GPS-Vergleich dient nur dieser Diagnose („war überhaupt ein Flugzeug in Hörweite?“), nicht der Berechnung.
+function acStatus(now){const A=AC.lev;if(A.length<20)return;const last=A.slice(-200);const srt=last.map(a=>a.L).sort((a,b)=>a-b),base=srt[Math.floor(srt.length*0.2)];
+  const rec=A.filter(a=>a.t>=now-60000);let mx=-999;for(let i=2;i<rec.length-2;i++){const m=(rec[i-2].L+rec[i-1].L+rec[i].L+rec[i+1].L+rec[i+2].L)/5;if(m>mx)mx=m}
+  const cur=A[A.length-1].L;let near=null;
+  if(FL.me)for(const o of FL.ac.values()){const p=o.pts[o.pts.length-1];if(!p||now-p.t>60000)continue;const d=Math.hypot(distM(FL.me.lat,FL.me.lon,p.lat,p.lon),p.alt);if(!near||d<near.d)near={d,o,p}}
+  const nearTxt=near?(near.d<15000?'nächstes Flugzeug laut GPS-Vergleich: '+near.o.flight+', '+nf(near.d/1000,1)+' km entfernt, '+Math.round(near.p.alt)+' m hoch':'laut GPS-Vergleich kein Flugzeug näher als 15 km'):(FL.me?'keine Flugdaten':'kein GPS-Vergleich');
+  AC.stat={base,cur,mx,near};
+  $('fStat').textContent='Pegel '+nf(cur,0)+' dB · Grundpegel '+nf(base,0)+' dB · größte Spitze letzte Minute +'+nf(Math.max(0,mx-base),1)+' dB (nötig: +5 dB, mind. 6 s) · Spitzen erkannt: '+AC.events.length+' · Flugzeuge geladen: '+FL.ac.size+' · '+nearTxt+(FL.err?' · Flugdaten-Fehler: '+FL.err:'');
+  if(now-(AC.statT||0)>=(AC.statEvery||60000)&&!AC.sim){AC.statT=now;const min=Math.round((now-AC.t0)/60000);
+    logEvent('Überflug','Status nach '+min+' min: Pegel '+nf(cur,0)+' dB, Grundpegel '+nf(base,0)+' dB, größte Spitze der letzten Minute +'+nf(Math.max(0,mx-base),1)+' dB (Schwelle +5 dB, mind. 6 s breit) · Pegelspitzen bisher: '+AC.events.length+' · Flugzeuge geladen: '+FL.ac.size+' · '+nearTxt+(FL.err?' · Flugdaten-Fehler: '+FL.err:''),'Diagnose')}}
 function acDetect(now){const A=AC.lev;if(A.length<60)return;
   const i0=A.findIndex(a=>a.t>=now-200000);const seg=A.slice(Math.max(0,i0));
   const sm=seg.map((a,i)=>{let s=0,n=0;for(let k=Math.max(0,i-5);k<=Math.min(seg.length-1,i+5);k++){s+=seg[k].L;n++}return s/n});
