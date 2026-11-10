@@ -74,6 +74,17 @@ main{padding:0 16px 32px}
     <button class="sec" id="vMix" aria-pressed="true">Bild: Mischung</button>
     <button class="sec" id="vDepth" aria-pressed="false">Bild: nur Tiefe</button>
   </div>
+  <div class="row" id="recRow" style="display:none">
+    <button class="sec" id="recBtn" aria-pressed="false">Aufzeichnen (für die Analyse)</button>
+    <button class="sec" id="recMark" style="display:none;border-color:var(--red);color:var(--red)">Hier stimmt etwas nicht</button>
+  </div>
+  <div class="card" id="recPanel" style="display:none">
+    <b>Aufzeichnung fertig.</b> <span id="recInfo"></span>
+    <p style="margin:8px 0 4px">Was hat nicht funktioniert? (Tippen oder über das Mikrofon der Tastatur diktieren)</p>
+    <textarea id="recNote" rows="4" style="width:100%;background:#0E1626;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:8px;font:inherit" placeholder="z. B. Karton lag 1 m vor mir, App sagte „frei geradeaus“"></textarea>
+    <div class="row"><button class="go" id="recShare" style="min-height:50px;font-size:18px">Datei teilen / sichern</button><button class="sec" id="recDrop">Verwerfen</button></div>
+    <p style="margin:8px 0 0">Die Datei enthält: LiDAR-Messwerte, Entscheidungen der Wegführung, alle Ansagen, jede Sekunde ein kleines Kamerabild und ein Bildschirmfoto. Sie bleibt auf dem Handy, bis du sie teilst.</p>
+  </div>
   <div class="row" id="srcRow" style="display:none">
     <button class="sec" id="srcLidar" aria-pressed="true">Quelle: LiDAR (Meter)</button>
     <button class="sec" id="srcAi" aria-pressed="false">Quelle: Kamera-KI</button>
@@ -278,6 +289,50 @@ function navSound(now){const R=NAV.res;if(!R){if(now>=NAV.nextPing){tone(0,300,0
   if(open){const az=B.dg*1.4,f0=B===A?620:820;tone(az,f0,0.3,0.13,t+0.2,'sine');tone(az,f0*1.5,0.2,0.1,t+0.29,'sine')}
   else{tone(0,220,0.35,0.16,t+0.2,'triangle');tone(0,196,0.35,0.2,t+0.38,'triangle')}
   NAV.nextPing=now+Math.max(0.42,Math.min(1.4,0.3+0.3*A.free))}
+/* ---------- Aufzeichnung für die Analyse ----------
+   Hält fest, was die App gemessen, entschieden und gesagt hat – plus jede Sekunde ein kleines Kamerabild und ein Bildschirmfoto.
+   Damit lässt sich ein Durchgang später Bild für Bild nachvollziehen und die Auswertung mit denselben Messwerten erneut rechnen. */
+const REC={on:false,t0:0,frames:[],cam:[],screen:[],speech:[],marks:[],n:0,timer:null,max:120,started:'',dur:0};
+const CAN_SHARE=!!(NATIVE&&NATIVE.caps&&NATIVE.caps.rec);
+const recT=()=>+((performance.now()-REC.t0)/1000).toFixed(2);
+function f32i16(a,scale){const o=new Int16Array(a.length);for(let i=0;i<a.length;i++){const v=a[i];o[i]=(v<-900||!isFinite(v))?-32768:Math.max(-32767,Math.min(32767,Math.round(v*scale)))}return o}
+function recFrame(f,v,H,D){if(!REC.on)return;REC.n++;if(f.jpg)REC.cam.push({t:recT(),jpg:f.jpg});if(REC.n%2)return;// 4 Messbilder pro Sekunde
+  const AH=f.ah?b64f32(f.ah):null,RT=f.rt?b64f32(f.rt):null,R=NAV.res,r2=x=>x==null?null:+x.toFixed(2);
+  REC.frames.push({t:recT(),w:f.w,h:f.h,pose:f.pose||null,head:f.head||null,pitch:f.pitch==null?null:r2(f.pitch),fov:f.fov||null,camH:r2(f.camH),floorY:f.floorY==null?null:+f.floorY.toFixed(3),floor:!!f.floor,floorSrc:f.floorSrc||null,tracking:f.tracking,persons:f.persons||[],objects:f.objects||[],
+    d:(AH&&RT&&H)?null:f32i16(v,1000),hg:H?f32i16(H,1000):null,hd:(D&&!AH)?f32i16(D,1000):null,a:AH?f32i16(AH,1000):null,r:RT?f32i16(RT,1000):null,
+    nav:R?{ahead:[r2(R.ahead.free),R.ahead.why,r2(R.ahead.h)],best:R.best.dg,bestFree:r2(R.best.free),stop:R.stop,out:R.out.map(o=>[o.dg,r2(o.free),o.why,r2(o.h)]),near:r2(R.near),far:r2(R.far),txt:$('navTxt').textContent}:null,
+    dist:st.dist.map(x=>isFinite(x)?r2(x):null),drop:(st.drop||[]).map(Boolean),snd:st.mode.snd,
+    cl:st.clusters.map(o=>[objLabel(o),r2(o.d),Math.round(o.az),r2(o.hmin),r2(o.hmax),r2(o.wid)])})}
+try{const sp=speechSynthesis.speak.bind(speechSynthesis);speechSynthesis.speak=u=>{if(REC.on)REC.speech.push({t:recT(),txt:u.text});return sp(u)}}catch(e){}
+function recStart(){if(!st.on||st.src!=='lidar'){setState('Erst Raumsicht mit LiDAR starten, dann aufzeichnen.','bad');return}
+  Object.assign(REC,{on:true,t0:performance.now(),frames:[],cam:[],screen:[],speech:[],marks:[],n:0,started:new Date().toISOString()});
+  toggle('recBtn',true);$('recMark').style.display='';$('recMark').textContent='Hier stimmt etwas nicht';$('recPanel').style.display='none';
+  try{NATIVE.post({cmd:'depthSnap',on:true})}catch(e){}
+  NATIVE.on.screenshot=d=>{if(REC.on&&d&&d.jpg)REC.screen.push({t:recT(),jpg:d.jpg})};
+  REC.timer=setInterval(()=>{const t=recT();$('recBtn').textContent='Aufzeichnung stoppen ('+Math.floor(t)+' s)';try{NATIVE.post({cmd:'screenshot'})}catch(e){}if(t>=REC.max)recStop()},1000)}
+function recStop(){if(!REC.on)return;REC.on=false;REC.dur=recT();clearInterval(REC.timer);try{NATIVE.post({cmd:'depthSnap',on:false})}catch(e){}
+  toggle('recBtn',false);$('recBtn').textContent='Aufzeichnen (für die Analyse)';$('recMark').style.display='none';
+  $('recInfo').textContent=Math.round(REC.dur)+' s · '+REC.frames.length+' Messbilder · '+REC.cam.length+' Kamerabilder · '+REC.screen.length+' Bildschirmfotos · '+REC.speech.length+' Ansagen · '+REC.marks.length+(REC.marks.length===1?' Markierung':' Markierungen')+(CAN_SHARE?'':' · Kamerabilder, Bildschirmfotos und Teilen brauchen die neue App-Version');
+  $('recPanel').style.display='';try{$('recPanel').scrollIntoView({behavior:'smooth',block:'center'})}catch(e){}}
+$('recBtn').onclick=()=>{REC.on?recStop():recStart()};
+$('recMark').onclick=()=>{if(!REC.on)return;REC.marks.push({t:recT(),nav:$('navTxt').textContent});$('recMark').textContent='Markiert ('+REC.marks.length+') – weiter';try{NATIVE.post({cmd:'haptic',style:'medium'})}catch(e){}};
+$('recDrop').onclick=()=>{REC.frames=[];REC.cam=[];REC.screen=[];$('recPanel').style.display='none'};
+async function recBuild(){const b64=a=>{const u=new Uint8Array(a.buffer,a.byteOffset,a.byteLength);let t='';for(let i=0;i<u.length;i+=0x8000)t+=String.fromCharCode.apply(null,u.subarray(i,i+0x8000));return btoa(t)};
+  const doc={format:'lagebild-raumsicht-aufzeichnung-1',started:REC.started,dur:REC.dur,app:NATIVE&&NATIVE.caps?{version:NATIVE.caps.version,build:NATIVE.caps.build,nav:!!NATIVE.caps.nav}:null,ua:navigator.userAgent,
+    note:$('recNote').value,marks:REC.marks,speech:REC.speech,units:'d (Strahl), hg (Höhe über Boden), hd (waagerecht), a (voraus), r (rechts): Int16 little-endian in Millimetern, −32768 = ungültig; Raster w×h zeilenweise; fehlt d, dann d = Wurzel(a² + r² + (hg − camH)²)',
+    frames:REC.frames.map(f=>Object.assign({},f,{d:f.d&&b64(f.d),hg:f.hg&&b64(f.hg),hd:f.hd&&b64(f.hd),a:f.a&&b64(f.a),r:f.r&&b64(f.r)})),cam:REC.cam,screen:REC.screen};
+  let bytes=new TextEncoder().encode(JSON.stringify(doc)),gz=false;
+  if(window.CompressionStream){try{bytes=new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer());gz=true}catch(e){}}
+  return{bytes,b64,name:'raumsicht-'+REC.started.slice(0,19).replace(/[:T]/g,'-')+'.json'+(gz?'.gz':'')}}
+$('recShare').onclick=async()=>{const info=$('recInfo');if(!REC.frames.length){info.textContent='Keine Messbilder aufgezeichnet.';return}info.textContent='Datei wird erstellt …';
+  try{const {bytes,b64,name}=await recBuild();const mb=(bytes.length/1048576).toFixed(1).replace('.',',')+' MB';
+    if(CAN_SHARE){NATIVE.on.shareDone=d=>{info.textContent=d&&d.ok?name+' ('+mb+') wurde geteilt oder gesichert.':name+' ('+mb+') – Teilen abgebrochen'+(d&&d.error?': '+d.error:'')+'. Du kannst es erneut versuchen.'};
+      info.textContent=name+' ('+mb+') – Teilen-Menü öffnet sich …';NATIVE.post({cmd:'shareFile',name,b64:b64(bytes)})}
+    else{const file=new File([bytes],name,{type:'application/octet-stream'});
+      if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file]});info.textContent=name+' ('+mb+') geteilt.'}
+      else{const a=document.createElement('a');a.href=URL.createObjectURL(file);a.download=name;a.click();info.textContent=name+' ('+mb+') – falls nichts passiert: Teilen braucht die neue App-Version.'}}}
+  catch(e){info.textContent='Datei konnte nicht erstellt oder geteilt werden: '+(e&&e.message||e)}};
+if(NATIVE&&NATIVE.caps&&NATIVE.caps.lidar)$('recRow').style.display='';
 function say(){const names=['ganz links','links','leicht links','geradeaus','leicht rechts','rechts','ganz rechts'];let bi=0;for(let i=1;i<COLS;i++)if(st.near[i]>st.near[bi])bi=i;const v=st.near[bi];
   const dm=st.dist[bi],m=isFinite(dm)?(dm<1?Math.round(dm*100)+' Zentimeter':dm.toFixed(1).replace('.',',')+' Meter'):'';
   const dropI=(st.drop||[]).findIndex(Boolean);const txt=!st.on?'Raumsicht ist nicht gestartet.':st.src==='lidar'&&dropI>=0?'Achtung, Kante abwärts, '+names[dropI]+'.':st.src==='lidar'?(m?'Nächstes Hindernis '+names[bi]+', '+m+'.':'Keine gültige Messung.'):v>0.85?'Sehr nah, '+names[bi]+'.':v>0.6?'Nah, '+names[bi]+'.':'Nichts auffällig nah. Nächstes Objekt '+names[bi]+'.';
@@ -366,7 +421,8 @@ function analyseLidar(f){const v=b64f32(f.data),w=f.w,h=f.h;st.w=w;st.h=h;
   if(dropMid)setState('Achtung: Kante oder Stufe abwärts','bad',note);
   else if(!isFinite(md))setState('Keine gültige Messung in der Mitte','live','Zu nah, zu weit (über ca. 5 m) oder Fläche spiegelt. '+(H?'':note));
   else setState((md<0.7?'Sehr nah: ':md<1.3?'Nah: ':'Mitte frei bis ')+fm(md),md<0.7?'bad':md<1.3?'live':'good',note);
-  if(H&&D)navUpdate(f,v,H,D,w,h);else{NAV.res=null;$('navBox').style.display='';$('navTxt').textContent='Boden noch nicht erkannt – Handy nach unten neigen';$('navTxt').style.color='var(--amber)'}
+  if(H&&D)navUpdate(f,v,H,D,w,h);if(!(H&&D)){NAV.res=null;$('navBox').style.display='';$('navTxt').textContent='Boden noch nicht erkannt – Handy nach unten neigen';$('navTxt').style.color='var(--amber)'}
+  recFrame(f,v,H,D);
   if(st.mode.snd!=='weg'&&((isFinite(md)&&md<0.7)||dropMid)&&now-st.lastHaptic>400){st.lastHaptic=now;NATIVE.post({cmd:'haptic',style:'heavy'})}
   if(dropMid&&st.ctx&&st.mode.warn&&now-(st.lastDropTone||0)>700){st.lastDropTone=now;tone(0,140,0.4,0.25,st.ctx.currentTime+0.01,'sawtooth')}
   sonify()}
@@ -383,7 +439,7 @@ async function loop(sid){
 setInterval(()=>{if(st.on)sonify()},60);
 
 /* ---------- Start / Stop ---------- */
-function stop(reason,bad){NAV.g.clear();NAV.res=null;NAV.said={t:0,key:''};$('navBox').style.display='none';$('pers').style.display='none';$('objBox').style.display='none';objSaid='';persHist.length=0;persSaid=-1;if(NATIVE){try{NATIVE.post({cmd:'depthStop'});NATIVE.on.depth=null}catch(e){}}st.dist.fill(NaN);st.on=false;st.sid++;st.clusters=[];st.sceneText='';st.nextObj=0;if(st.stream){st.stream.getTracks().forEach(t=>t.stop());st.stream=null}$('vid').srcObject=null;
+function stop(reason,bad){if(REC.on)recStop();NAV.g.clear();NAV.res=null;NAV.said={t:0,key:''};$('navBox').style.display='none';$('pers').style.display='none';$('objBox').style.display='none';objSaid='';persHist.length=0;persSaid=-1;if(NATIVE){try{NATIVE.post({cmd:'depthStop'});NATIVE.on.depth=null}catch(e){}}st.dist.fill(NaN);st.on=false;st.sid++;st.clusters=[];st.sceneText='';st.nextObj=0;if(st.stream){st.stream.getTracks().forEach(t=>t.stop());st.stream=null}$('vid').srcObject=null;
   if(st.ctx){try{st.ctx.close()}catch(e){}st.ctx=null}try{speechSynthesis.cancel()}catch(e){}
   $('go').textContent='Raumsicht starten';$('go').classList.remove('stop');st.near.fill(0);[...$('zones').children].forEach(b=>{b.style.height='4%';b.className=''});
   const c=$('depth');c.getContext('2d').clearRect(0,0,c.width,c.height);$('badge').textContent='–';setState(bad?'Unterbrochen':'Beendet',bad?'bad':'',reason||'')}
