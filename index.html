@@ -148,12 +148,12 @@ nav button.run .dot{visibility:visible}
   </div>
   <div class="strip"><canvas id="fStrip" width="700" height="220" role="img" aria-label="Spektrogramm"></canvas><p id="fStripTxt">Spektrogramm 40–400 Hz, 90 Sekunden</p></div>
   <div class="strip" style="padding:0;overflow:hidden"><div id="fMap" style="height:320px;background:#0B1322" role="region" aria-label="Karte mit Standort und Flugzeugen"></div></div>
-  <div class="hint" id="fMapHint">Karte und Flugdaten starten mit „Mithören starten“. Flugzeugpositionen stammen aus ADS-B-Daten (adsb.lol), nicht aus dem Mikrofon; der Ton dient zur Zuordnung.</div>
-  <div class="row" style="margin-top:10px"><button class="sec" id="fLocBtn" aria-pressed="false">Standort aus Überflügen: aus</button><button class="sec" id="fRegBtn">Suchregion: Deutschland</button></div>
+  <div class="hint" id="fMapHint">Karte und Flugdaten starten mit „Mithören starten“. Flugzeugpositionen stammen aus ADS-B-Daten (adsb.lol), Kennung und Route aus adsbdb.com. Der Standort wird nur aus Ton und Flugdaten berechnet – GPS wird ausschließlich zum Vergleich angezeigt und protokolliert.</div>
+  <div class="row" style="margin-top:10px"><button class="sec" id="fLocBtn" aria-pressed="true" style="display:none">Standort aus Überflügen: an</button><button class="sec" id="fRegBtn">Suchregion: Deutschland</button></div>
   <div class="row" style="margin-top:8px"><button class="sec" id="fSimBtn">Testlauf mit simulierten Überflügen</button></div>
-  <div class="ticker" id="fLocBox" style="display:none"><h3>Standort aus Überflügen</h3><div id="fLoc">Warte auf den ersten gehörten Überflug …</div><div class="hint" id="fLocHint">Prinzip: Zeitpunkt und Frequenzabfall des Tons ergeben den Abstand zum Flugzeug, ADS-B dessen Position. Jeder Überflug liefert zwei mögliche Punkte links und rechts der Flugspur; mehrere Überflüge auf verschiedenen Routen schneiden sich im Standort. GPS dient nur zum Vergleich.</div></div>
-  <div class="ticker" id="fMatchBox" style="display:none"><h3>Zuordnung des letzten Überflugs</h3><div id="fMatch"></div></div>
-  <div class="ticker"><h3>Flugzeuge in der Nähe</h3><ul class="log" id="fList"><li><time>–</time><span>Noch keine Daten.</span><em></em></li></ul></div>
+  <div class="ticker" id="fLocBox"><h3>Standort aus Überflügen</h3><div id="fLoc">Warte auf den ersten gehörten Überflug …</div><div class="hint" id="fLocHint">Prinzip: Zeitpunkt und Frequenzabfall des Tons ergeben den Abstand zum Flugzeug, ADS-B dessen Position. Jeder Überflug liefert zwei mögliche Punkte links und rechts der Flugspur; mehrere Überflüge auf verschiedenen Routen schneiden sich im Standort. GPS dient nur zum Vergleich.</div></div>
+  <div class="ticker" id="fMatchBox" style="display:none"><h3>Gehörte Überflüge</h3><ul class="log" id="fMatch"></ul></div>
+  <div class="ticker"><h3 id="fListHead">Flugzeuge in der Suchregion</h3><ul class="log" id="fList"><li><time>–</time><span>Noch keine Daten.</span><em></em></li></ul></div>
   <details class="diag"><summary>Gerätecheck</summary><dl id="fDiag"></dl></details>
 </section>
 
@@ -662,66 +662,122 @@ function loadLeaflet(){if(window.L)return Promise.resolve();return new Promise((
 const toRad=d=>d*Math.PI/180;
 function distM(a,b,c,d){const R=6371000,x=toRad(c-a),y=toRad(d-b),h=Math.sin(x/2)**2+Math.cos(toRad(a))*Math.cos(toRad(c))*Math.sin(y/2)**2;return 2*R*Math.asin(Math.sqrt(h))}
 function acIcon(track,hi){const col=hi?'#FF5A5F':'#FFB020';return L.divIcon({className:'',iconSize:[26,26],iconAnchor:[13,13],html:'<svg width="26" height="26" viewBox="0 0 26 26" style="transform:rotate('+(track||0)+'deg)"><path d="M13 2 L20 22 L13 17 L6 22 Z" fill="'+col+'" stroke="#070C16" stroke-width="1.5"/></svg>'})}
-function flStart(s){FL.s=s;FL.polling=false;LOC.events=[];LOC.est=null;LOC.sim=false;$('fPosCard').style.display='none';FL.ac.clear();FL.best=null;$('fMatchBox').style.display='none';
+function flStart(s){FL.s=s;FL.polling=false;LOC.events=[];LOC.est=null;LOC.sim=false;$('fPosCard').style.display='none';FL.ac.clear();FL.best=null;HEARD.length=0;$('fMatchBox').style.display='none';
   loadLeaflet().then(()=>{if(!s.alive)return;
     if(!FL.map){FL.map=L.map('fMap').setView([51.16,10.45],6);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'© OpenStreetMap'}).addTo(FL.map);FL.layer=L.layerGroup().addTo(FL.map)}
-    setTimeout(()=>FL.map.invalidateSize(),100);if(LOC.on)flPoll();
-    if(!navigator.geolocation){$('fMapHint').textContent='Standort nicht verfügbar – keine Karte.';return}
-    FL.watch=navigator.geolocation.watchPosition(p=>{const first=!FL.me;FL.me={lat:p.coords.latitude,lon:p.coords.longitude,acc:p.coords.accuracy,alt:p.coords.altitude};if(first){FL.map.setView([FL.me.lat,FL.me.lon],10);flPoll()}flDraw()},
-      e=>{$('fMapHint').textContent='Standort nicht freigegeben ('+e.message+'). Ohne Standort keine Flugzeugsuche.'},{enableHighAccuracy:true,maximumAge:10000});
+    // Suche und Karte richten sich nach der Suchregion (zuletzt berechneter Standort oder von Hand gewählt) – nie nach GPS
+    setTimeout(()=>FL.map.invalidateSize(),100);FL.map.setView([LOC.region.lat,LOC.region.lon],LOC.region.fix?10:7);$('fRegBtn').textContent='Suchregion: '+LOC.region.name;flPoll();
+    if(!navigator.geolocation)return;
+    // GPS nur zum Vergleich: Anzeige als Referenzpunkt und Abweichung im Protokoll
+    FL.watch=navigator.geolocation.watchPosition(p=>{const first=!FL.me;FL.me={lat:p.coords.latitude,lon:p.coords.longitude,acc:p.coords.accuracy,alt:p.coords.altitude};
+        if(first)logEvent('Überflug','GPS-Vergleichswert: '+fmtC(FL.me.lat,FL.me.lon)+' ± '+Math.round(FL.me.acc)+' m (fließt nicht in die Berechnung ein)','GPS nur Vergleich');flDraw()},
+      ()=>{},{enableHighAccuracy:true,maximumAge:10000});
     s.onStop.push(()=>{if(FL.watch!=null)navigator.geolocation.clearWatch(FL.watch);FL.watch=null});
   }).catch(e=>{$('fMapHint').textContent=e.message})}
 function flStop(){FL.s=null}
-function flPoll(){const s=FL.s;if(!s||!s.alive||FL.polling)return;if(!FL.me&&!LOC.on)return;FL.polling=true;
-  const c=LOC.on?LOC.region:FL.me;const url='https://api.adsb.lol/v2/lat/'+c.lat.toFixed(4)+'/lon/'+c.lon.toFixed(4)+'/dist/'+(LOC.on?250:15);
+function flPoll(){const s=FL.s;if(!s||!s.alive||FL.polling)return;FL.polling=true;
+  const c=LOC.region;const url='https://api.adsb.lol/v2/lat/'+c.lat.toFixed(4)+'/lon/'+c.lon.toFixed(4)+'/dist/250';
   httpGet(url).then(t=>{const j=JSON.parse(t),now=Date.now();FL.err='';
     for(const a of (j.ac||[])){if(a.lat==null||a.lon==null)continue;const alt=a.alt_baro==='ground'?0:(typeof a.alt_baro==='number'?a.alt_baro*0.3048:(a.alt_geom||0)*0.3048);if(LOC.on&&alt>6000)continue;
-      let o=FL.ac.get(a.hex);if(!o){o={hex:a.hex,pts:[]};FL.ac.set(a.hex,o)}o.flight=(a.flight||'').trim()||a.r||a.hex;o.type=a.t||'';o.reg=a.r||'';o.last=now;
+      let o=FL.ac.get(a.hex);if(!o){o={hex:a.hex,pts:[]};FL.ac.set(a.hex,o)}o.cs=(a.flight||'').trim();o.flight=o.cs||a.r||a.hex;o.type=a.t||'';o.reg=a.r||'';o.desc=a.desc||'';o.op=a.ownOp||'';o.sq=a.squawk||'';o.vr=typeof a.baro_rate==='number'?a.baro_rate:(typeof a.geom_rate==='number'?a.geom_rate:0);o.last=now;
       o.pts.push({t:now-(a.seen_pos||0)*1000,lat:a.lat,lon:a.lon,alt,gs:(a.gs||0)*0.5144,track:a.track||0});if(o.pts.length>80)o.pts.shift()}
     for(const [k,o] of FL.ac)if(now-o.last>120000)FL.ac.delete(k);
-    $('fMapHint').textContent=FL.ac.size+(LOC.on?' tief fliegende Flugzeuge (unter 6 km) in der Suchregion (460 km)':' Flugzeuge im Umkreis von 28 km')+' · Stand '+fmt(new Date())+' · Daten: adsb.lol';flDraw()})
+    $('fMapHint').textContent=FL.ac.size+' tief fliegende Flugzeuge (unter 6 km) im Umkreis von 460 km um „'+LOC.region.name+'“ · Stand '+fmt(new Date())+' · Daten: adsb.lol, adsbdb.com · GPS nur Vergleich';flDraw()})
   .catch(e=>{FL.err=e.message;$('fMapHint').textContent=(NATIVE&&NATIVE.caps&&NATIVE.caps.http)?'Flugdaten nicht abrufbar: '+e.message:'Flugdaten lassen sich nur in der Lagebild-App laden (der Browser blockiert den Abruf). Standort und Karte funktionieren.'})
   .finally(()=>{if(FL.s&&FL.s.alive)sTimeout(FL.s,()=>{FL.polling=false;flPoll()},LOC.on?8000:5000);else FL.polling=false})}
+/* ---------- Flugzeug-Steckbrief: Kennung, Typ, Fluggesellschaft, Route, Flugphase ---------- */
+const TYPES={A19N:'Airbus A319neo',A20N:'Airbus A320neo',A21N:'Airbus A321neo',A318:'Airbus A318',A319:'Airbus A319',A320:'Airbus A320',A321:'Airbus A321',A332:'Airbus A330-200',A333:'Airbus A330-300',A339:'Airbus A330-900neo',A343:'Airbus A340-300',A346:'Airbus A340-600',A359:'Airbus A350-900',A35K:'Airbus A350-1000',A388:'Airbus A380',BCS1:'Airbus A220-100',BCS3:'Airbus A220-300',B737:'Boeing 737-700',B738:'Boeing 737-800',B739:'Boeing 737-900',B37M:'Boeing 737 MAX 7',B38M:'Boeing 737 MAX 8',B39M:'Boeing 737 MAX 9',B744:'Boeing 747-400',B748:'Boeing 747-8',B752:'Boeing 757-200',B763:'Boeing 767-300',B772:'Boeing 777-200',B77W:'Boeing 777-300ER',B77L:'Boeing 777F',B788:'Boeing 787-8',B789:'Boeing 787-9',B78X:'Boeing 787-10',E170:'Embraer 170',E175:'Embraer 175',E190:'Embraer 190',E195:'Embraer 195',E290:'Embraer E190-E2',E295:'Embraer E195-E2',CRJ7:'Bombardier CRJ700',CRJ9:'Bombardier CRJ900',CRJX:'Bombardier CRJ1000',DH8D:'De Havilland Dash 8-400',AT75:'ATR 72-500',AT76:'ATR 72-600',AT45:'ATR 42-500',A400:'Airbus A400M (Militär)',C130:'Lockheed C-130 (Militär)',C17:'Boeing C-17 (Militär)',EUFI:'Eurofighter (Militär)',TOR:'Tornado (Militär)',A310:'Airbus A310',C172:'Cessna 172',C152:'Cessna 152',C182:'Cessna 182',PA28:'Piper PA-28',DA40:'Diamond DA40',DA42:'Diamond DA42',SR22:'Cirrus SR22',PC12:'Pilatus PC-12',C56X:'Cessna Citation Excel',C68A:'Cessna Citation Latitude',GLF6:'Gulfstream G650',CL35:'Bombardier Challenger 350',BE20:'Beechcraft King Air 200',EC35:'Airbus H135 (Hubschrauber)',EC45:'Airbus H145 (Hubschrauber)',H145:'Airbus H145 (Hubschrauber)',H135:'Airbus H135 (Hubschrauber)',EC30:'Airbus H130 (Hubschrauber)',EC55:'Airbus H155 (Hubschrauber)',BK17:'BK 117 (Hubschrauber)',A139:'AW139 (Hubschrauber)',R44:'Robinson R44 (Hubschrauber)',NH90:'NH90 (Hubschrauber, Militär)',H64:'AH-64 Apache (Militär)',CH47:'CH-47 Chinook (Militär)'};
+const AIRL={DLH:'Lufthansa',CLH:'Lufthansa CityLine',LHX:'Lufthansa City Airlines',GEC:'Lufthansa Cargo',EWG:'Eurowings',CFG:'Condor',TUI:'TUIfly',TUB:'TUI Belgium',RYR:'Ryanair',RUK:'Ryanair UK',EZY:'easyJet',EJU:'easyJet Europe',EZS:'easyJet Switzerland',WZZ:'Wizz Air',WMT:'Wizz Air Malta',BAW:'British Airways',KLM:'KLM',AFR:'Air France',SWR:'Swiss',AUA:'Austrian',BEL:'Brussels Airlines',IBE:'Iberia',VLG:'Vueling',SAS:'SAS',FIN:'Finnair',LOT:'LOT',THY:'Turkish Airlines',PGT:'Pegasus',SXS:'SunExpress',UAE:'Emirates',QTR:'Qatar Airways',ETD:'Etihad',DAL:'Delta',UAL:'United',AAL:'American Airlines',ACA:'Air Canada',TAP:'TAP Air Portugal',AEE:'Aegean',ITY:'ITA Airways',ELY:'El Al',NOZ:'Norwegian',DHK:'DHL Air UK',BCS:'DHL (European Air Transport)',FDX:'FedEx',UPS:'UPS',CHX:'ADAC Luftrettung (Christoph)',GAF:'Luftwaffe',GAM:'Heer (Bundeswehr)',NATO:'NATO',DCS:'DC Aviation',MGY:'Mercury',TVS:'Smartwings',CTN:'Croatia Airlines',ROT:'TAROM',AZA:'ITA Airways',ICE:'Icelandair',EIN:'Aer Lingus',CXI:'Corendon',MAP:'Marabu',DCA:'DC Aviation'};
+const SQ={'7500':'Entführung (Code 7500)','7600':'Funkausfall (Code 7600)','7700':'Notfall (Code 7700)'};
+const compass=t=>['Nord','Nordost','Ost','Südost','Süd','Südwest','West','Nordwest'][Math.round(((t||0)%360)/45)%8];
+// Abruf der Zusatzdaten (Typ/Halter je Flugzeug, Route je Flugnummer) einzeln nacheinander, mit Zwischenspeicher
+const INFO={ac:new Map(),rt:new Map(),q:[],busy:false,tm:null};
+function getAny(url){return httpGet(url).catch(e=>{if(/nicht freigegeben|Zeitüberschreitung/.test(e.message))return fetch(url).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.text()});throw e})}
+function want(o){if(!o||o.type==='SIM')return;if(o.hex&&!INFO.ac.has(o.hex)){INFO.ac.set(o.hex,null);INFO.q.push(['ac',o.hex])}if(o.cs&&!INFO.rt.has(o.cs)){INFO.rt.set(o.cs,null);INFO.q.push(['rt',o.cs])}pump()}
+function pump(){if(INFO.busy||!INFO.q.length)return;INFO.busy=true;const [k,id]=INFO.q.shift();const M=k==='ac'?INFO.ac:INFO.rt;
+  getAny('https://api.adsbdb.com/v0/'+(k==='ac'?'aircraft/':'callsign/')+encodeURIComponent(id)).then(t=>{const r=(JSON.parse(t)||{}).response;M.set(id,(r&&(k==='ac'?r.aircraft:r.flightroute))||false)})
+  .catch(()=>M.set(id,false)).finally(()=>{INFO.busy=false;setTimeout(pump,200);clearTimeout(INFO.tm);INFO.tm=setTimeout(()=>{flDraw();renderHeard()},300)})}
+const apName=x=>x?((x.municipality||x.name||'?')+(x.iata_code?' ('+x.iata_code+')':'')):'';
+function acText(o){const p=o.pts[o.pts.length-1];const A=INFO.ac.get(o.hex)||null,R=o.cs?INFO.rt.get(o.cs)||null:null;
+  const al=(R&&R.airline&&R.airline.name)||AIRL[(o.cs||'').slice(0,4)]||AIRL[(o.cs||'').slice(0,3)]||o.op||(A&&A.registered_owner)||'';
+  const ty=(A&&[A.manufacturer,A.type].filter(Boolean).join(' '))||TYPES[o.type]||o.desc||o.type||'Typ unbekannt';
+  const reg=(A&&A.registration)||o.reg||'';
+  const route=R&&R.origin&&R.destination?apName(R.origin)+' → '+apName(R.destination):'';
+  const routeShort=R&&R.origin&&R.destination?(R.origin.iata_code||R.origin.icao_code)+'→'+(R.destination.iata_code||R.destination.icao_code):'';
+  let phase='';
+  if(R&&R.destination&&p.alt<3500&&o.vr<-200&&distM(p.lat,p.lon,R.destination.latitude,R.destination.longitude)<90000)phase='im Landeanflug auf '+apName(R.destination);
+  else if(R&&R.origin&&p.alt<3500&&o.vr>200&&distM(p.lat,p.lon,R.origin.latitude,R.origin.longitude)<90000)phase='nach dem Start in '+apName(R.origin);
+  else phase=o.vr>300?'steigt':o.vr<-300?'sinkt':'Höhe gleichbleibend';
+  const pend=(o.cs&&INFO.rt.get(o.cs)===null)||INFO.ac.get(o.hex)===null;
+  return{id:o.flight,al,ty,reg,route,routeShort,pend,
+    name:o.flight+(al?' · '+al:''),
+    line2:ty+(reg?' · '+reg:''),
+    line3:route?route:(o.cs?(INFO.rt.get(o.cs)===false?'Route nicht bekannt (Privat-, Militär- oder Rettungsflug?)':'Route wird geladen …'):'keine Flugnummer gesendet'),
+    move:Math.round(p.alt).toLocaleString('de-DE')+' m · '+Math.round(p.gs*3.6)+' km/h · Richtung '+compass(p.track)+' · '+phase,
+    sq:SQ[o.sq]||''}}
+const HEARD=[];
 function flDraw(){if(!FL.map||!FL.layer)return;FL.layer.clearLayers();
-  if(FL.me){L.circle([FL.me.lat,FL.me.lon],{radius:27780,color:'#5B98FF',weight:1,fill:false,dashArray:'4 6'}).addTo(FL.layer);
-    L.circleMarker([FL.me.lat,FL.me.lon],{radius:7,color:'#fff',weight:2,fillColor:'#35E0C8',fillOpacity:1}).bindTooltip(LOC.on?'GPS':'Du',{permanent:LOC.on,direction:'bottom'}).addTo(FL.layer)}
-  const rows=[];
-  const ref=LOC.est||FL.me;
-  for(const o of FL.ac.values()){const p=o.pts[o.pts.length-1];const hi=o.hex===FL.best;if(FL.ac.size>60&&(!ref||distM(ref.lat,ref.lon,p.lat,p.lon)>60000)&&!hi)continue;
+  if(FL.me)L.circleMarker([FL.me.lat,FL.me.lon],{radius:6,color:'#fff',weight:2,fillColor:'#35E0C8',fillOpacity:.9}).bindTooltip('GPS (nur Vergleich)',{permanent:!!LOC.est,direction:'bottom'}).addTo(FL.layer);
+  const heard=new Set(HEARD.map(h=>h.hex).filter(Boolean));
+  const ref=LOC.est&&!LOC.est.amb?LOC.est:null;const B=FL.map.getBounds().pad(0.3);
+  let list=[...FL.ac.values()].map(o=>({o,p:o.pts[o.pts.length-1]}));
+  for(const r of list)r.d=ref?Math.hypot(distM(ref.lat,ref.lon,r.p.lat,r.p.lon),r.p.alt):r.p.alt;
+  list.sort((a,b)=>a.d-b.d);
+  let shown=0;
+  for(const r of list){const o=r.o,p=r.p,hi=heard.has(o.hex),best=o.hex===FL.best;if(!hi&&(!B.contains([p.lat,p.lon])||shown>=150))continue;shown++;
     if(o.pts.length>1)L.polyline(o.pts.map(q=>[q.lat,q.lon]),{color:hi?'#FF5A5F':'#FFB020',weight:2,opacity:.6}).addTo(FL.layer);
-    L.marker([p.lat,p.lon],{icon:acIcon(p.track,hi)}).bindTooltip(o.flight+' · '+Math.round(p.alt)+' m',{permanent:hi||FL.ac.size<=6,direction:'right',offset:[10,0]}).addTo(FL.layer);
-    if(FL.me){const h=distM(FL.me.lat,FL.me.lon,p.lat,p.lon);rows.push({o,p,d:Math.hypot(h,p.alt)})}}
+    const T=acText(o);
+    const pop='<b>'+T.name+'</b><br>'+T.line2+'<br>'+T.line3+'<br>'+T.move+(T.sq?'<br><b style="color:#FF5A5F">'+T.sq+'</b>':'')+'<br><small>ICAO-Kennung '+o.hex.toUpperCase()+'</small>';
+    L.marker([p.lat,p.lon],{icon:acIcon(p.track,hi||!!T.sq)}).bindTooltip(o.flight+(T.routeShort?' '+T.routeShort:'')+' · '+Math.round(p.alt)+' m',{permanent:hi||best||shown<=6,direction:'right',offset:[10,0]}).bindPopup(pop).on('click',()=>want(o)).addTo(FL.layer);
+    // Wohin? gestrichelte Linie zum Zielflughafen der gehörten Flugzeuge
+    const R=o.cs?INFO.rt.get(o.cs):null;
+    if(hi&&R&&R.destination&&R.destination.latitude!=null){L.polyline([[p.lat,p.lon],[R.destination.latitude,R.destination.longitude]],{color:'#FF5A5F',weight:1.5,dashArray:'6 8',opacity:.8}).addTo(FL.layer);
+      L.circleMarker([R.destination.latitude,R.destination.longitude],{radius:5,color:'#FF5A5F',weight:2,fillOpacity:.3}).bindTooltip('Ziel '+apName(R.destination),{direction:'top'}).addTo(FL.layer)}}
   flDrawLoc();
-  rows.sort((a,b)=>a.d-b.d);const ul=$('fList');ul.textContent='';
-  if(!rows.length){const li=document.createElement('li');li.innerHTML='<time>–</time><span>Keine Flugzeuge im Umkreis.</span><em></em>';ul.appendChild(li)}
-  rows.slice(0,6).forEach(r=>{const li=document.createElement('li');const t=document.createElement('time');t.textContent=nf(r.d/1000,1)+' km';const sp=document.createElement('span');sp.textContent=r.o.flight+(r.o.type?' · '+r.o.type:'');const sm=document.createElement('small');sm.textContent=Math.round(r.p.alt)+' m Höhe · '+Math.round(r.p.gs*3.6)+' km/h';sp.appendChild(sm);const em=document.createElement('em');em.textContent=r.o.hex===FL.best?'gehört':'';li.append(t,sp,em);ul.appendChild(li)})}
-function flMatch(ev){if(LOC.on)flLocate(ev);if(!FL.me||!FL.ac.size)return;const tc=ev.cpa.getTime();let best=null;
-  for(const o of FL.ac.values()){let m=null;for(const q of o.pts){const d=Math.hypot(distM(FL.me.lat,FL.me.lon,q.lat,q.lon),q.alt);if(!m||d<m.d)m={d,t:q.t}}
-    if(!m)continue;const ta=m.t+m.d/C_SOUND*1000;const dt=Math.abs(ta-tc)/1000;if(dt>90||m.d>15000)continue;const score=dt/20+m.d/4000;if(!best||score<best.score)best={o,m,dt,score}}
-  const box=$('fMatchBox'),el=$('fMatch');box.style.display='';
-  if(!best){el.textContent='Kein Flugzeug passt zeitlich zum gehörten Überflug ('+fmt(ev.cpa)+'). Mögliche Ursachen: Hubschrauber oder Fahrzeug ohne ADS-B, oder Daten unvollständig.';return}
-  FL.best=best.o.hex;const p=best.o.pts[best.o.pts.length-1];
-  el.textContent='Wahrscheinlich '+best.o.flight+(best.o.type?' ('+best.o.type+')':'')+' – kleinster Abstand '+nf(best.m.d/1000,1)+' km, Zeitversatz zum Ton '+Math.round(best.dt)+' s (Schalllaufzeit berücksichtigt).';
-  logEvent('Überflug','Zuordnung: '+best.o.flight+(best.o.type?' ('+best.o.type+')':'')+', Abstand '+nf(best.m.d/1000,1)+' km, Versatz '+Math.round(best.dt)+' s','ADS-B-Abgleich');
-  flDraw();if(FL.map)FL.map.panTo([p.lat,p.lon])}
+  $('fListHead').textContent=ref?'Flugzeuge nahe dem berechneten Standort':'Tief fliegende Flugzeuge in der Suchregion';
+  const ul=$('fList');ul.textContent='';const top=list.slice(0,8);top.forEach(r=>want(r.o));
+  if(!top.length){const li=document.createElement('li');li.innerHTML='<time>–</time><span>Keine Flugzeuge in der Suchregion.</span><em></em>';ul.appendChild(li)}
+  top.forEach(r=>{const T=acText(r.o);const li=document.createElement('li');const t=document.createElement('time');t.textContent=ref?nf(r.d/1000,1)+' km':Math.round(r.p.alt)+' m';
+    const sp=document.createElement('span');sp.textContent=T.name;const sm=document.createElement('small');sm.textContent=T.line2+' · '+T.line3+' · '+T.move;sp.appendChild(sm);
+    const em=document.createElement('em');em.textContent=T.sq?'NOTFALL':heard.has(r.o.hex)?'gehört':'';li.append(t,sp,em);ul.appendChild(li)})}
+// Zuordnung des gehörten Tons: das Flugzeug, dessen Daten (Zeit, Geschwindigkeit laut Doppler, Abstand) am besten zum Ton und
+// zum berechneten Standort passen – ohne GPS
+function flMatch(ev){flLocate(ev);const last=LOC.events[LOC.events.length-1];let pick=null;
+  if(last&&last.cands.length){pick=last.cands[0];if(LOC.est&&!LOC.est.amb){let bd=1e18;for(const c of last.cands){const d=distM(LOC.est.lat,LOC.est.lon,c.lat,c.lon);if(d<bd){bd=d;pick=c}}}}
+  const rec={t:ev.cpa,hex:pick?pick.hex:null,d:pick?pick.d:null,logged:false};HEARD.unshift(rec);if(HEARD.length>8)HEARD.pop();
+  if(pick){FL.best=pick.hex;want(FL.ac.get(pick.hex))}
+  $('fMatchBox').style.display='';renderHeard();flDraw();
+  // Protokoll, sobald Typ und Route geladen sind (spätestens nach 6 s)
+  const t0=Date.now();const tryLog=()=>{if(rec.logged)return;const o=rec.hex&&FL.ac.get(rec.hex);
+    if(o){const T=acText(o);if(T.pend&&Date.now()-t0<6000){setTimeout(tryLog,500);return}
+      logEvent('Überflug','Gehört '+fmt(rec.t)+': '+T.name+' · '+T.line2+' · '+T.line3+' · '+T.move+(rec.d?' · Abstand laut Ton ≈ '+nf(rec.d/1000,1)+' km':'')+(T.sq?' · '+T.sq:''),'ADS-B + Ton')}
+    else logEvent('Überflug','Gehört '+fmt(rec.t)+': kein passendes Flugzeug mit ADS-B (Hubschrauber, Militär oder Fahrzeug ohne Sender?)','Ton ohne Zuordnung');
+    rec.logged=true};tryLog()}
+function renderHeard(){const ul=$('fMatch');if(!ul)return;ul.textContent='';
+  for(const h of HEARD){const li=document.createElement('li');const t=document.createElement('time');t.textContent=fmt(h.t);const sp=document.createElement('span');const em=document.createElement('em');
+    const o=h.hex&&FL.ac.get(h.hex);
+    if(o){const T=acText(o);sp.textContent=T.name;const sm=document.createElement('small');sm.textContent=T.line2+' · '+T.line3+' · '+T.move+(h.d?' · Abstand laut Ton ≈ '+nf(h.d/1000,1)+' km':'');sp.appendChild(sm);em.textContent=T.sq?'NOTFALL':''}
+    else sp.textContent='Kein passendes Flugzeug mit ADS-B (Hubschrauber, Militär oder Fahrzeug ohne Sender?)';
+    li.append(t,sp,em);ul.appendChild(li)}}
 
 /* ================= Standort aus Überflügen ================= */
-const LOC={on:false,region:{lat:51.16,lon:10.45,name:'Deutschland'},events:[],est:null,pickRegion:false};
-$('fLocBtn').onclick=()=>{LOC.on=!LOC.on;$('fLocBtn').setAttribute('aria-pressed',LOC.on?'true':'false');$('fLocBtn').textContent='Standort aus Überflügen: '+(LOC.on?'an':'aus');$('fLocBox').style.display=LOC.on?'':'none';FL.ac.clear();if(FL.s&&FL.s.alive)flPoll()};
+const LOC={on:true,region:(()=>{try{const r=JSON.parse(localStorage.getItem('lb.region')||'null');if(r&&isFinite(r.lat))return r}catch(e){}return{lat:51.16,lon:10.45,name:'Deutschland'}})(),events:[],est:null,pickRegion:false};
+function saveRegion(){try{localStorage.setItem('lb.region',JSON.stringify(LOC.region))}catch(e){}$('fRegBtn').textContent='Suchregion: '+LOC.region.name}
+$('fLocBtn').onclick=()=>{LOC.on=true;$('fLocBtn').setAttribute('aria-pressed',LOC.on?'true':'false');$('fLocBtn').textContent='Standort aus Überflügen: '+(LOC.on?'an':'aus');$('fLocBox').style.display=LOC.on?'':'none';FL.ac.clear();if(FL.s&&FL.s.alive)flPoll()};
 $('fRegBtn').onclick=()=>{if(!FL.map){$('fRegBtn').textContent='Erst „Mithören starten“';return}LOC.pickRegion=true;$('fRegBtn').textContent='Jetzt grob auf die Karte tippen …';
-  FL.map.once('click',e=>{LOC.region={lat:e.latlng.lat,lon:e.latlng.lng,name:e.latlng.lat.toFixed(2)+', '+e.latlng.lng.toFixed(2)};LOC.pickRegion=false;$('fRegBtn').textContent='Suchregion: '+LOC.region.name;FL.ac.clear()})};
+  FL.map.once('click',e=>{LOC.region={lat:e.latlng.lat,lon:e.latlng.lng,name:e.latlng.lat.toFixed(2)+', '+e.latlng.lng.toFixed(2)};LOC.pickRegion=false;saveRegion();FL.ac.clear();if(FL.s&&FL.s.alive){FL.polling=false;flPoll()}})};
 const ENU=(o,p)=>({x:(p.lon-o.lon)*Math.cos(toRad(o.lat))*111320,y:(p.lat-o.lat)*110540});
 const UNENU=(o,q)=>({lat:o.lat+q.y/110540,lon:o.lon+q.x/(Math.cos(toRad(o.lat))*111320)});
 function acAt(o,t){const P=o.pts;if(!P.length)return null;let a=null,b=null;for(const q of P){if(q.t<=t)a=q;if(q.t>=t&&!b)b=q}
   if(a&&b){if(b.t===a.t)return a;const k=(t-a.t)/(b.t-a.t);return{lat:a.lat+(b.lat-a.lat)*k,lon:a.lon+(b.lon-a.lon)*k,alt:a.alt+(b.alt-a.alt)*k,gs:(a.gs+b.gs)/2,track:b.track}}
   const q=a||b;const dt=(t-q.t)/1000;if(Math.abs(dt)>60)return null;const e=Math.sin(toRad(q.track))*q.gs*dt,n=Math.cos(toRad(q.track))*q.gs*dt;const r=UNENU(q,{x:e,y:n});return{lat:r.lat,lon:r.lon,alt:q.alt,gs:q.gs,track:q.track}}
-function flLocate(ev){const tc=ev.cpa.getTime();const vAc=C_SOUND*(ev.fhi-ev.flo)/(ev.fhi+ev.flo);const ground=FL.me&&FL.me.alt!=null?FL.me.alt:60;const cands=[];
+function flLocate(ev){const tc=ev.cpa.getTime();const vAc=C_SOUND*(ev.fhi-ev.flo)/(ev.fhi+ev.flo);const ground=60;/* Geländehöhe pauschal – GPS-Höhe wird bewusst nicht verwendet */const cands=[];
   for(const o of FL.ac.values()){const p0=acAt(o,tc);if(!p0||p0.gs<20)continue;
     // Abstand am Mittendurchgang aus der Steilheit: d = f0·v² / (c·|df/dt|), v aus ADS-B
     let d=isFinite(ev.slope)&&ev.slope>0?ev.f0*p0.gs*p0.gs/(C_SOUND*ev.slope):NaN;if(!isFinite(d)||d<150||d>12000)continue;
     const p=acAt(o,tc-d/C_SOUND*1000)||p0;const h=Math.max(30,p.alt-ground);if(d<h*0.85)continue;const r=Math.sqrt(Math.max(0,d*d-h*h));
     const w=Math.exp(-(((vAc-p.gs)/45)**2));if(w<0.05)continue;const nx=Math.cos(toRad(p.track)),ny=-Math.sin(toRad(p.track));
-    for(const sgn of [1,-1]){const q=UNENU(p,{x:sgn*nx*r,y:sgn*ny*r});cands.push({lat:q.lat,lon:q.lon,w,flight:o.flight,d,side:sgn>0?'rechts':'links'})}}
+    for(const sgn of [1,-1]){const q=UNENU(p,{x:sgn*nx*r,y:sgn*ny*r});cands.push({lat:q.lat,lon:q.lon,w,flight:o.flight,hex:o.hex,d,side:sgn>0?'rechts':'links'})}}
   cands.sort((a,b)=>b.w-a.w);LOC.events.push({t:tc,cands:cands.slice(0,12)});if(LOC.events.length>6)LOC.events.shift();
   logEvent('Überflug','Ortung: '+(cands.length?cands.length/2+' passende Flugzeuge, Abstand laut Ton ≈ '+nf(cands[0].d/1000,1)+' km':'kein passendes Flugzeug in der Suchregion'),'Standort aus Überflügen');
   flSolve();flDraw()}
@@ -735,35 +791,36 @@ function flSolve(){const evs=LOC.events.filter(e=>e.cands.length);LOC.est=null;i
   let txt=n===1?'Ein Überflug: zwei mögliche Standorte links und rechts der Spur von '+best.pick[0].flight+'. Ein zweiter Überflug auf anderer Route löst das auf.':
     'Schätzung aus '+n+' Überflügen ('+best.pick.map(p=>p.flight).join(', ')+'), Unsicherheit ca. ± '+nf(LOC.est.r/1000,1)+' km.';
   if(FL.me&&n>1){const err=distM(FL.me.lat,FL.me.lon,c.lat,c.lon);txt+=' Abweichung zum GPS: '+nf(err/1000,2)+' km.'}
-  $('fLoc').textContent=txt;if(FL.map&&n>1)FL.map.setView([c.lat,c.lon],11);flShowPos(best,n)}
+  $('fLoc').textContent=txt;if(FL.map&&n>1)FL.map.setView([c.lat,c.lon],11);
+  if(n>1&&!LOC.sim){LOC.region={lat:c.lat,lon:c.lon,name:'berechneter Standort',fix:true};saveRegion()}flShowPos(best,n)}
 const fmtC=(lat,lon)=>Math.abs(lat).toFixed(5).replace('.',',')+'° '+(lat>=0?'N':'S')+'  '+Math.abs(lon).toFixed(5).replace('.',',')+'° '+(lon>=0?'O':'W');
 let geoLast='';
 function flShowPos(best,n){const card=$('fPosCard');card.style.display='';const E=LOC.est;
   if(n===1){const cs=LOC.events[LOC.events.length-1].cands.slice(0,2);$('fPosCoord').textContent='2 Möglichkeiten';$('fPosPlace').textContent=cs.map((c,i)=>(i?'oder ':'')+fmtC(c.lat,c.lon)).join('  ');
     $('fPosAcc').textContent='± '+nf(E.r/1000,1)+' km';$('fPosGps').textContent='–';$('fPosBasis').textContent='1 Überflug ('+best.pick[0].flight+'). Ein zweiter Überflug auf anderer Route entscheidet zwischen beiden Punkten.'+(LOC.sim?' · SIMULATION':'');return}
   $('fPosCoord').textContent=fmtC(E.lat,E.lon);$('fPosAcc').textContent='± '+(E.r<1000?Math.round(E.r)+' m':nf(E.r/1000,1)+' km');
-  $('fPosGps').textContent=FL.me?(()=>{const e=distM(FL.me.lat,FL.me.lon,E.lat,E.lon);return e<1000?Math.round(e)+' m':nf(e/1000,1)+' km'})():'kein GPS';
+  $('fPosGps').textContent=FL.me?(()=>{const e=distM(FL.me.lat,FL.me.lon,E.lat,E.lon);return e<1000?Math.round(e)+' m':nf(e/1000,1)+' km'})():'kein GPS-Vergleich';
   $('fPosBasis').textContent=n+' Überflüge: '+best.pick.map(p=>p.flight).join(', ')+' · berechnet '+fmt(new Date())+(LOC.sim?' · SIMULATION':'');
   const key=E.lat.toFixed(3)+','+E.lon.toFixed(3);if(key!==geoLast){geoLast=key;$('fPosPlace').textContent='Ort wird ermittelt …';
     fetch('https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=16&accept-language=de&lat='+E.lat.toFixed(5)+'&lon='+E.lon.toFixed(5)).then(r=>r.json()).then(j=>{const a=j.address||{};
       $('fPosPlace').textContent=[a.road,a.suburb||a.city_district,a.city||a.town||a.village||a.municipality].filter(Boolean).join(', ')||j.display_name||'Ort unbekannt'}).catch(()=>{$('fPosPlace').textContent='Ortsname nicht abrufbar'})}
-  logEvent('Überflug','Berechneter Standort '+fmtC(E.lat,E.lon)+' ± '+Math.round(E.r)+' m'+(FL.me?', Abweichung GPS '+Math.round(distM(FL.me.lat,FL.me.lon,E.lat,E.lon))+' m':''),LOC.sim?'Simulation':'aus '+n+' Überflügen')}
+  logEvent('Überflug','Berechneter Standort '+fmtC(E.lat,E.lon)+' ± '+Math.round(E.r)+' m'+(FL.me?' · Vergleich GPS: Abweichung '+Math.round(distM(FL.me.lat,FL.me.lon,E.lat,E.lon))+' m (GPS nicht verwendet)':' · kein GPS-Vergleich'),LOC.sim?'Simulation':'aus '+n+' Überflügen')}
 // Testlauf: zwei simulierte Überflüge um den GPS-Standort (oder die Mitte der Suchregion)
 $('fSimBtn').onclick=()=>{if(!FL.map||!FL.s||!FL.s.alive){$('fSimBtn').textContent='Erst „Mithören starten“';return}
-  if(!LOC.on)$('fLocBtn').click();LOC.sim=true;LOC.events=[];const T=FL.me||LOC.region,now=Date.now();
+  LOC.sim=true;LOC.events=[];const T=FL.me||LOC.region,now=Date.now();
   const off=(o,dx,dy)=>UNENU(o,{x:dx,y:dy});
   const plane=(hex,flight,track,dE,dN,alt,gs,tC)=>{const pts=[];const ue=Math.sin(toRad(track)),un=Math.cos(toRad(track));const C=off(T,dE,dN);for(let k=-120;k<=120;k+=5){const q=off(C,ue*gs*k,un*gs*k);pts.push({t:tC+k*1000,lat:q.lat,lon:q.lon,alt,gs,track})}
-    FL.ac.set(hex,{hex,flight,type:'SIM',pts,last:now});const d=Math.hypot(Math.hypot(dE,dN),alt-60),f0=150,sl=f0*gs*gs/(C_SOUND*d)*(1+0.2*(Math.random()*2-1));
+    FL.ac.set(hex,{hex,flight,cs:'',type:'SIM',desc:'Simuliertes Flugzeug',vr:0,pts,last:now});const d=Math.hypot(Math.hypot(dE,dN),alt-60),f0=150,sl=f0*gs*gs/(C_SOUND*d)*(1+0.2*(Math.random()*2-1));
     return{fhi:f0*(1+gs/C_SOUND),flo:f0*(1-gs/C_SOUND),f0,slope:sl,cpa:new Date(tC+d/C_SOUND*1000+(Math.random()*4-2)*1000),drop:1}};
-  const e1=plane('sim1','SIM-A',75,-300,1400,900,65,now-90000);flLocate(e1);
-  setTimeout(()=>{const e2=plane('sim2','SIM-B',345,1800,200,700,55,now-30000);flLocate(e2);$('fSimBtn').textContent='Testlauf wiederholen'},1500);
+  const e1=plane('sim1','SIM-A',75,-300,1400,900,65,now-90000);flMatch(e1);
+  setTimeout(()=>{const e2=plane('sim2','SIM-B',345,1800,200,700,55,now-30000);flMatch(e2);$('fSimBtn').textContent='Testlauf wiederholen'},1500);
   $('fSimBtn').textContent='Simuliere zwei Überflüge …'};
-$('fLocBtn').addEventListener('click',()=>{if(!LOC.on){$('fPosCard').style.display='none';LOC.sim=false}});
+
 function flDrawLoc(){if(!LOC.on||!FL.layer)return;
   for(const e of LOC.events)for(const c of e.cands.slice(0,6))L.circleMarker([c.lat,c.lon],{radius:4,color:'#93A3B8',weight:1,fillOpacity:.5}).bindTooltip(c.flight+' · '+c.side).addTo(FL.layer);
   if(LOC.est){if(LOC.est.amb){for(const c of LOC.events[LOC.events.length-1].cands.slice(0,2))L.circle([c.lat,c.lon],{radius:LOC.est.r,color:'#FF5A5F',weight:2,fillOpacity:.08}).addTo(FL.layer)}
     else{L.circle([LOC.est.lat,LOC.est.lon],{radius:LOC.est.r,color:'#FF5A5F',weight:2,fillOpacity:.12}).addTo(FL.layer);L.marker([LOC.est.lat,LOC.est.lon],{icon:L.divIcon({className:'',iconSize:[22,22],iconAnchor:[11,11],html:'<svg width="22" height="22"><path d="M11 1v20M1 11h20" stroke="#FF5A5F" stroke-width="3"/></svg>'})}).bindTooltip('Berechnet'+(LOC.sim?' (Simulation)':''),{permanent:true,direction:'top'}).addTo(FL.layer)}}}
-window.__LB.loc={LOC,FL,flLocate,flSolve};
+window.__LB.loc={LOC,FL,flLocate,flSolve,flMatch,INFO,acText,HEARD};
 
 /* ================= Navigation ================= */
 document.querySelectorAll('nav button').forEach(b=>b.addEventListener('click',()=>{const t=b.dataset.t;
