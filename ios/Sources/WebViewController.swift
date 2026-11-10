@@ -231,6 +231,9 @@ final class WebViewController: UIViewController, WKScriptMessageHandler, WKNavig
                 if let e = error { out["error"] = e.localizedDescription }
                 self?.send("httpResult", out)
             }.resume()
+        case "keepAwake":
+            // Bildschirm nicht sperren, solange eine Messung läuft (sonst bricht z. B. das Mithören im Überflug ab)
+            UIApplication.shared.isIdleTimerDisabled = (body["on"] as? Bool) ?? false
         case "haptic":
             let style: UIImpactFeedbackGenerator.FeedbackStyle
             switch body["style"] as? String {
