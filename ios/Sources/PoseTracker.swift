@@ -15,6 +15,9 @@ final class PoseTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate 
     private let queue = DispatchQueue(label: "lagebild.pose", qos: .userInteractive)
     private let request = VNDetectHumanBodyPoseRequest()
     private var configured = false
+    private var front = false
+    private var device: AVCaptureDevice?
+    private var zoom: CGFloat = 1
     private var running = false
     private var batch: [Float] = []
     private var batchCount = 0
@@ -31,16 +34,22 @@ final class PoseTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate 
         .root, .leftHip, .rightHip, .leftKnee, .rightKnee, .leftAnkle, .rightAnkle
     ]
 
-    func start(maxFps: Double) {
+    /// front = true: Frontkamera (Display zeigt zum Sportler, Bild gespiegelt wie ein Spiegel)
+    func start(maxFps: Double, front: Bool = false) {
         queue.async { [weak self] in
             guard let self = self else { return }
-            if !self.configured {
+            if !self.configured || self.front != front {
+                if self.session.isRunning { self.session.stopRunning() }
+                self.front = front
+                self.dims = (0, 0)
                 do { try self.configure(maxFps: maxFps) } catch {
+                    self.configured = false
                     self.onError?(error.localizedDescription)
                     return
                 }
                 self.configured = true
             }
+            self.applyZoom(1)
             self.t0 = -1
             self.batch.removeAll()
             self.batchCount = 0
@@ -48,9 +57,26 @@ final class PoseTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate 
             self.dropped = 0
             self.running = true
             self.session.startRunning()
-            self.onStarted?(["fps": self.cameraFps, "w": self.dims.0, "h": self.dims.1,
+            self.onStarted?(["fps": self.cameraFps, "w": self.dims.0, "h": self.dims.1, "front": self.front,
                              "joints": Self.joints.map { $0.rawValue.rawValue }])
         }
+    }
+
+    /// Digitaler Zoom um die Bildmitte, damit ein weiter entfernt stehender Sportler das Bild füllt
+    func setZoom(_ z: Double) {
+        queue.async { [weak self] in self?.applyZoom(CGFloat(z)) }
+    }
+
+    private func applyZoom(_ z: CGFloat) {
+        guard let dev = device else { return }
+        let maxZ = min(dev.activeFormat.videoMaxZoomFactor, 4)
+        let target = max(1, min(z, maxZ))
+        do {
+            try dev.lockForConfiguration()
+            dev.videoZoomFactor = target
+            dev.unlockForConfiguration()
+            zoom = target
+        } catch {}
     }
 
     func stop() {
@@ -67,8 +93,8 @@ final class PoseTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate 
     }
 
     private func configure(maxFps: Double) throws {
-        guard let dev = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else {
-            throw PoseError(msg: "Keine Rückkamera gefunden.")
+        guard let dev = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: front ? .front : .back) else {
+            throw PoseError(msg: front ? "Keine Frontkamera gefunden." : "Keine Rückkamera gefunden.")
         }
         // Format mit der höchsten Bildrate (bis maxFps) und mindestens 1280 × 720, bei Gleichstand das kleinere
         var best: AVCaptureDevice.Format?
@@ -82,7 +108,10 @@ final class PoseTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate 
                 best = f; bestFps = fps; bestW = d.width
             }
         }
+        device = dev
         session.beginConfiguration()
+        for i in session.inputs { session.removeInput(i) }
+        for o in session.outputs { session.removeOutput(o) }
         session.sessionPreset = .inputPriority
         let input = try AVCaptureDeviceInput(device: dev)
         guard session.canAddInput(input) else { session.commitConfiguration(); throw PoseError(msg: "Kamera kann nicht verwendet werden.") }
@@ -117,7 +146,8 @@ final class PoseTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate 
         if t0 < 0 { t0 = t; lastSend = t }
         if dims.0 == 0 { dims = (CVPixelBufferGetHeight(pb), CVPixelBufferGetWidth(pb)) }
 
-        let handler = VNImageRequestHandler(cvPixelBuffer: pb, orientation: .right, options: [:])
+        // Hochkant: Rückkamera .right; Frontkamera .leftMirrored (Koordinaten passen dann zur gespiegelten Vorschau)
+        let handler = VNImageRequestHandler(cvPixelBuffer: pb, orientation: front ? .leftMirrored : .right, options: [:])
         try? handler.perform([request])
 
         var s = [Float](repeating: 0, count: 1 + Self.joints.count * 3)
@@ -154,7 +184,7 @@ final class PoseTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate 
             let payload: [String: Any] = [
                 "n": batchCount, "stride": s.count, "d": batch.base64(),
                 "fps": frameTimes.count, "cam": cameraFps, "drop": dropped,
-                "w": dims.0, "h": dims.1
+                "w": dims.0, "h": dims.1, "front": front, "zoom": Double(zoom)
             ]
             batch.removeAll(keepingCapacity: true)
             batchCount = 0

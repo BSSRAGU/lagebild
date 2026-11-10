@@ -35,7 +35,7 @@ final class WebViewController: UIViewController, WKScriptMessageHandler, WKNavig
         ucc.add(WeakMessageHandler(self), name: "lagebild")
         let lidar = DepthSensor.isSupported ? "true" : "false"
         let bridge = """
-        window.LagebildNative={caps:{version:'\(Self.appVersion) (Build \(Self.appBuild))',build:\(Self.appBuild),rawAudio:true,http:true,persons:\(lidar),lidar:\(lidar),lidarMap:\(lidar),haptics:true,pose:true},on:{},
+        window.LagebildNative={caps:{version:'\(Self.appVersion) (Build \(Self.appBuild))',build:\(Self.appBuild),rawAudio:true,http:true,persons:\(lidar),lidar:\(lidar),lidarMap:\(lidar),haptics:true,pose:true,poseFront:true,poseZoom:true},on:{},
         post:function(m){window.webkit.messageHandlers.lagebild.postMessage(m)},
         dispatch:function(t,d){var f=this.on[t];if(f){try{f(d)}catch(e){console.error(e)}}}};
         """
@@ -149,9 +149,13 @@ final class WebViewController: UIViewController, WKScriptMessageHandler, WKNavig
         UIApplication.shared.isIdleTimerDisabled = false
     }
 
-    private func startPose(maxFps: Double) {
+    private func startPose(maxFps: Double, front: Bool) {
         showPreview()
-        pose.start(maxFps: maxFps)
+        pose.start(maxFps: maxFps, front: front)
+        // Ausrichtung der Vorschau nach dem Kamerawechsel erneut setzen
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            if let c = self?.previewLayer?.connection, c.isVideoOrientationSupported { c.videoOrientation = .portrait }
+        }
     }
 
     // MARK: - Nachrichten von der Webseite
@@ -192,20 +196,23 @@ final class WebViewController: UIViewController, WKScriptMessageHandler, WKNavig
             depth.stop()
         case "poseStart":
             let fps = (body["fps"] as? NSNumber)?.doubleValue ?? 240
+            let front = (body["front"] as? Bool) ?? false
             depth.stop()
             switch AVCaptureDevice.authorizationStatus(for: .video) {
             case .authorized:
-                startPose(maxFps: fps)
+                startPose(maxFps: fps, front: front)
             case .notDetermined:
                 AVCaptureDevice.requestAccess(for: .video) { [weak self] ok in
                     DispatchQueue.main.async {
-                        if ok { self?.startPose(maxFps: fps) }
+                        if ok { self?.startPose(maxFps: fps, front: front) }
                         else { self?.send("poseError", ["message": "Kamerazugriff verweigert."]) }
                     }
                 }
             default:
                 send("poseError", ["message": "Kamerazugriff verweigert. Einstellungen → Lagebild → Kamera erlauben."])
             }
+        case "poseZoom":
+            pose.setZoom((body["z"] as? NSNumber)?.doubleValue ?? 1)
         case "poseStop":
             pose.stop()
             hidePreview()
