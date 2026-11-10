@@ -5,7 +5,7 @@ import AVFoundation
 final class WebViewController: UIViewController, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate {
     static let startURL = URL(string: "https://bssragu.github.io/lagebild/")!
     static let allowedHost = "bssragu.github.io"
-    static let httpHosts: Set<String> = ["api.adsb.lol", "api.airplanes.live"]
+    static let httpHosts: Set<String> = ["api.adsb.lol", "api.airplanes.live", "api.adsbdb.com"]
 
     private var webView: WKWebView!
     private let audio = SonarAudio()
