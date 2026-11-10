@@ -10,6 +10,10 @@ final class WebViewController: UIViewController, WKScriptMessageHandler, WKNavig
     private var webView: WKWebView!
     private let audio = SonarAudio()
     private let depth = DepthSensor()
+    private let pose = PoseTracker()
+    private var previewView: UIView?
+    private var previewLayer: AVCaptureVideoPreviewLayer?
+    private var bgColor = UIColor.black
     private var updateChecked = false
     static let versionURL = URL(string: "https://github.com/BSSRAGU/lagebild/releases/download/app-latest/version.json")!
     static var appVersion: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?" }
@@ -21,6 +25,7 @@ final class WebViewController: UIViewController, WKScriptMessageHandler, WKNavig
         super.viewDidLoad()
         let bg = UIColor(red: 7 / 255, green: 12 / 255, blue: 22 / 255, alpha: 1)
         view.backgroundColor = bg
+        bgColor = bg
 
         let config = WKWebViewConfiguration()
         config.allowsInlineMediaPlayback = true
@@ -30,7 +35,7 @@ final class WebViewController: UIViewController, WKScriptMessageHandler, WKNavig
         ucc.add(WeakMessageHandler(self), name: "lagebild")
         let lidar = DepthSensor.isSupported ? "true" : "false"
         let bridge = """
-        window.LagebildNative={caps:{version:'\(Self.appVersion) (Build \(Self.appBuild))',build:\(Self.appBuild),rawAudio:true,http:true,persons:\(lidar),lidar:\(lidar),lidarMap:\(lidar),haptics:true},on:{},
+        window.LagebildNative={caps:{version:'\(Self.appVersion) (Build \(Self.appBuild))',build:\(Self.appBuild),rawAudio:true,http:true,persons:\(lidar),lidar:\(lidar),lidarMap:\(lidar),haptics:true,pose:true},on:{},
         post:function(m){window.webkit.messageHandlers.lagebild.postMessage(m)},
         dispatch:function(t,d){var f=this.on[t];if(f){try{f(d)}catch(e){console.error(e)}}}};
         """
@@ -51,6 +56,12 @@ final class WebViewController: UIViewController, WKScriptMessageHandler, WKNavig
         audio.onState = { [weak self] payload in self?.send("audioState", payload) }
         depth.onFrame = { [weak self] payload in self?.send("depth", payload) }
         depth.onError = { [weak self] message in self?.send("depthError", ["message": message]) }
+        pose.onBatch = { [weak self] payload in self?.send("pose", payload) }
+        pose.onStarted = { [weak self] payload in self?.send("poseStarted", payload) }
+        pose.onError = { [weak self] message in
+            DispatchQueue.main.async { self?.hidePreview() }
+            self?.send("poseError", ["message": message])
+        }
 
         NotificationCenter.default.addObserver(self, selector: #selector(stopSensors),
                                                name: UIApplication.willResignActiveNotification, object: nil)
@@ -99,6 +110,48 @@ final class WebViewController: UIViewController, WKScriptMessageHandler, WKNavig
     @objc private func stopSensors() {
         audio.stop()
         depth.stop()
+        pose.stop()
+        hidePreview()
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        previewLayer?.frame = previewView?.bounds ?? .zero
+    }
+
+    /// Kamerabild hinter die (dann durchsichtige) Webseite legen
+    private func showPreview() {
+        if previewView == nil {
+            let pv = UIView(frame: view.bounds)
+            pv.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            pv.backgroundColor = .black
+            let layer = AVCaptureVideoPreviewLayer(session: pose.session)
+            layer.videoGravity = .resizeAspectFill
+            layer.frame = pv.bounds
+            if let c = layer.connection, c.isVideoOrientationSupported { c.videoOrientation = .portrait }
+            pv.layer.addSublayer(layer)
+            view.insertSubview(pv, belowSubview: webView)
+            previewView = pv
+            previewLayer = layer
+        }
+        webView.backgroundColor = .clear
+        webView.scrollView.backgroundColor = .clear
+        UIApplication.shared.isIdleTimerDisabled = true
+    }
+
+    private func hidePreview() {
+        previewLayer?.removeFromSuperlayer()
+        previewView?.removeFromSuperview()
+        previewLayer = nil
+        previewView = nil
+        webView?.backgroundColor = bgColor
+        webView?.scrollView.backgroundColor = bgColor
+        UIApplication.shared.isIdleTimerDisabled = false
+    }
+
+    private func startPose(maxFps: Double) {
+        showPreview()
+        pose.start(maxFps: maxFps)
     }
 
     // MARK: - Nachrichten von der Webseite
@@ -137,6 +190,25 @@ final class WebViewController: UIViewController, WKScriptMessageHandler, WKNavig
             depth.start(mapping: (body["map"] as? Bool) ?? false)
         case "depthStop":
             depth.stop()
+        case "poseStart":
+            let fps = (body["fps"] as? NSNumber)?.doubleValue ?? 240
+            depth.stop()
+            switch AVCaptureDevice.authorizationStatus(for: .video) {
+            case .authorized:
+                startPose(maxFps: fps)
+            case .notDetermined:
+                AVCaptureDevice.requestAccess(for: .video) { [weak self] ok in
+                    DispatchQueue.main.async {
+                        if ok { self?.startPose(maxFps: fps) }
+                        else { self?.send("poseError", ["message": "Kamerazugriff verweigert."]) }
+                    }
+                }
+            default:
+                send("poseError", ["message": "Kamerazugriff verweigert. Einstellungen → Lagebild → Kamera erlauben."])
+            }
+        case "poseStop":
+            pose.stop()
+            hidePreview()
         case "http":
             let id = body["id"] as? String ?? ""
             guard let s = body["url"] as? String, let url = URL(string: s),

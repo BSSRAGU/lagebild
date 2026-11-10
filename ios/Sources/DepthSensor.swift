@@ -16,11 +16,18 @@ final class DepthSensor: NSObject, ARSessionDelegate {
     private var lastTimestamp: TimeInterval = 0
     private let queue = DispatchQueue(label: "lagebild.depth")
 
-    // Eigene Raumkarte: Messpunkte als 5-cm-Würfel (Voxel) im Raumkoordinatensystem sammeln
-    static let voxelSize: Float = 0.05
-    static let maxVoxels = 400_000
+    // Eigene Raumkarte: Messpunkte als 3-cm-Würfel (Voxel) im Raumkoordinatensystem sammeln.
+    // Ein Würfel gilt erst als belegt, wenn er in mindestens `minHits` verschiedenen Bildern getroffen wurde
+    // (filtert Rauschen und „fliegende“ Punkte an Kanten heraus).
+    static let voxelSize: Float = 0.03
+    static let maxVoxels = 700_000
+    static let minHits: UInt8 = 3
+    static let maxRange: Float = 3.5
     private var mapping = false
     private var voxels = Set<Int64>()
+    private var hits = [Int64: UInt8]()
+    private var lastMapTransform: simd_float4x4?
+    private var lastMapTime: TimeInterval = 0
 
     // Personenerkennung (Apple Vision) auf dem Kamerabild, Abstand aus LiDAR
     private var lastPersonTime: TimeInterval = 0
@@ -51,14 +58,15 @@ final class DepthSensor: NSObject, ARSessionDelegate {
         s.delegateQueue = queue
         let config = ARWorldTrackingConfiguration()
         if ARWorldTrackingConfiguration.supportsFrameSemantics(.smoothedSceneDepth) {
-            config.frameSemantics = [.smoothedSceneDepth]
+            // Geglättete Tiefe für die Hinderniserkennung, rohe Tiefe (ohne Nachzieh-Effekt) für die Karte
+            config.frameSemantics = [.smoothedSceneDepth, .sceneDepth]
         } else {
             config.frameSemantics = [.sceneDepth]
         }
         config.planeDetection = [.horizontal]
         lastTimestamp = 0
         self.mapping = mapping
-        queue.async { self.voxels.removeAll(keepingCapacity: true) }
+        queue.async { self.voxels.removeAll(keepingCapacity: true); self.hits.removeAll(keepingCapacity: true); self.lastMapTransform = nil }
         s.run(config, options: [.resetTracking, .removeExistingAnchors])
         session = s
     }
@@ -242,37 +250,81 @@ final class DepthSensor: NSObject, ARSessionDelegate {
         payload["pose"] = [camPos.x, camPos.y, camPos.z, -T.columns.2.x, -T.columns.2.z]
 
         if mapping, case .normal = frame.camera.trackingState {
-            // Feinere Abtastung (jeder 2. Punkt), nur zuverlässige Werte bis 5 m
+            // Bei schnellen Drehungen nicht eintragen: Tiefe und Pose passen dann nicht exakt zusammen
+            var tooFast = false
+            if let last = lastMapTransform {
+                let dt = Float(max(0.01, frame.timestamp - lastMapTime))
+                let f0 = SIMD3<Float>(-last.columns.2.x, -last.columns.2.y, -last.columns.2.z)
+                let f1 = SIMD3<Float>(-T.columns.2.x, -T.columns.2.y, -T.columns.2.z)
+                let ang = acos(max(-1, min(1, simd_dot(simd_normalize(f0), simd_normalize(f1)))))
+                let mov = simd_length(SIMD3<Float>(T.columns.3.x - last.columns.3.x, T.columns.3.y - last.columns.3.y, T.columns.3.z - last.columns.3.z))
+                tooFast = ang / dt > 0.6 || mov / dt > 0.8
+            }
+            lastMapTransform = T
+            lastMapTime = frame.timestamp
             var fresh: [Int16] = []
             let vs = Self.voxelSize
-            var py = 0
-            while py < h {
-                let row = base.advanced(by: py * rowBytes).assumingMemoryBound(to: Float32.self)
-                let crow = confBase?.advanced(by: py * confRowBytes).assumingMemoryBound(to: UInt8.self)
-                var px = 0
-                while px < w {
-                    let d = row[px]
-                    let conf: UInt8 = crow?[px] ?? 2
-                    if d > 0.25 && d < 5.0 && conf >= 1 {
-                        let xc = (Float(px) - cx) * d / fx
-                        let yc = -(Float(py) - cy) * d / fy
-                        let wp = T * SIMD4<Float>(xc, yc, -d, 1)
-                        let ix = Int32((wp.x / vs).rounded(.down))
-                        let iy = Int32((wp.y / vs).rounded(.down))
-                        let iz = Int32((wp.z / vs).rounded(.down))
-                        if abs(ix) < 32000 && abs(iy) < 32000 && abs(iz) < 32000 && voxels.count < Self.maxVoxels {
-                            if voxels.insert(Self.key(ix, iy, iz)).inserted {
-                                fresh.append(Int16(ix)); fresh.append(Int16(iy)); fresh.append(Int16(iz))
+            if !tooFast, let raw = frame.sceneDepth ?? frame.smoothedSceneDepth {
+                let rmap = raw.depthMap
+                CVPixelBufferLockBaseAddress(rmap, .readOnly)
+                var rconf: UnsafeMutableRawPointer?
+                var rconfRow = 0
+                if let cm = raw.confidenceMap { CVPixelBufferLockBaseAddress(cm, .readOnly); rconf = CVPixelBufferGetBaseAddress(cm); rconfRow = CVPixelBufferGetBytesPerRow(cm) }
+                if let rbase = CVPixelBufferGetBaseAddress(rmap) {
+                    let rrow = CVPixelBufferGetBytesPerRow(rmap)
+                    let rw = CVPixelBufferGetWidth(rmap), rh = CVPixelBufferGetHeight(rmap)
+                    let sx2 = Float(rw) / Float(res.width), sy2 = Float(rh) / Float(res.height)
+                    let rfx = K[0][0] * sx2, rfy = K[1][1] * sy2, rcx = K[2][0] * sx2, rcy = K[2][1] * sy2
+                    let dAt = { (x: Int, y: Int) -> Float in rbase.advanced(by: y * rrow).assumingMemoryBound(to: Float32.self)[x] }
+                    var seen = Set<Int64>()
+                    var py = 1
+                    while py < rh - 1 {
+                        let crow = rconf?.advanced(by: py * rconfRow).assumingMemoryBound(to: UInt8.self)
+                        var px = 1
+                        while px < rw - 1 {
+                            let d = dAt(px, py)
+                            // nur hohe Sicherheit, 25 cm bis 3,5 m
+                            if d > 0.25 && d < Self.maxRange && (crow?[px] ?? 2) >= 2 {
+                                // Kantenfilter: Sprung zum Nachbarn > 3 % → Mischpunkt an einer Objektkante, verwerfen
+                                let lim = 0.03 * d + 0.01
+                                if abs(dAt(px - 1, py) - d) < lim && abs(dAt(px + 1, py) - d) < lim
+                                    && abs(dAt(px, py - 1) - d) < lim && abs(dAt(px, py + 1) - d) < lim {
+                                    let xc = (Float(px) + 0.5 - rcx) * d / rfx
+                                    let yc = -(Float(py) + 0.5 - rcy) * d / rfy
+                                    let wp = T * SIMD4<Float>(xc, yc, -d, 1)
+                                    let ix = Int32((wp.x / vs).rounded(.down))
+                                    let iy = Int32((wp.y / vs).rounded(.down))
+                                    let iz = Int32((wp.z / vs).rounded(.down))
+                                    if abs(ix) < 32000 && abs(iy) < 32000 && abs(iz) < 32000 {
+                                        let k = Self.key(ix, iy, iz)
+                                        if !voxels.contains(k) && seen.insert(k).inserted {
+                                            let n = (hits[k] ?? 0) + 1
+                                            if n >= Self.minHits {
+                                                hits[k] = nil
+                                                if voxels.count < Self.maxVoxels {
+                                                    voxels.insert(k)
+                                                    fresh.append(Int16(ix)); fresh.append(Int16(iy)); fresh.append(Int16(iz))
+                                                }
+                                            } else { hits[k] = n }
+                                        }
+                                    }
+                                }
                             }
+                            px += 2
                         }
+                        py += 2
                     }
-                    px += 2
+                    // Kandidaten-Speicher begrenzen (einmalige Ausreißer verfallen)
+                    if hits.count > 1_500_000 { hits = hits.filter { $0.value >= 2 } }
                 }
-                py += 2
+                if let cm = raw.confidenceMap { CVPixelBufferUnlockBaseAddress(cm, .readOnly) }
+                CVPixelBufferUnlockBaseAddress(rmap, .readOnly)
             }
             payload["vox"] = fresh.withUnsafeBufferPointer { Data(buffer: $0).base64EncodedString() }
             payload["vs"] = vs
             payload["nvox"] = voxels.count
+            payload["maxvox"] = Self.maxVoxels
+            payload["fast"] = tooFast
         }
         onFrame?(payload)
     }
