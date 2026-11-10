@@ -40,13 +40,14 @@ main{padding:0 16px 32px}
 <header><h1>Raumkarte<small>Eigene LiDAR-Kartierung · Forschungsdemo</small></h1><span><a href="raumsicht.html">Raumsicht</a> · <a href="./">Lagebild</a></span></header>
 <main>
   <div class="view" id="view"><canvas id="c2d"></canvas><canvas id="c3d" style="display:none"></canvas><div class="badge" id="badge">–</div></div>
-  <div class="legend"><span><i style="background:#0E5A5A"></i>Boden</span><span><i style="background:#FFB020"></i>Gegenstand bis 1 m</span><span><i style="background:#E8E2D6"></i>Wand / hoch</span><span><i style="background:#5B98FF"></i>Weg</span><span><i style="background:#FF5A5F"></i>Handy</span><span><i style="background:#C9A2FF;border-radius:5px"></i>Person</span></div>
+  <div class="legend"><span><i style="background:#0E5A5A"></i>Boden</span><span><i style="background:#FFB020"></i>Gegenstand bis 1 m</span><span><i style="background:#E8E2D6"></i>Wand / hoch</span><span><i style="background:#FFFFFF"></i>Erkannte Wand (gerade)</span><span><i style="background:#5B98FF"></i>Weg</span><span><i style="background:#FF5A5F"></i>Handy</span><span><i style="background:#C9A2FF;border-radius:5px"></i>Person</span></div>
   <div class="state" id="state" role="status" aria-live="polite">Bereit</div>
   <div class="detail" id="detail"></div>
   <button class="go" id="go">Kartierung starten</button>
   <div class="row">
     <button class="sec" id="v2d" aria-pressed="true">Grundriss</button>
     <button class="sec" id="v3d" aria-pressed="false">3D-Punktwolke</button>
+    <button class="sec" id="straight" aria-pressed="true">Wände begradigen</button>
   </div>
   <div class="row">
     <button class="sec" id="follow" aria-pressed="true">Mitführen</button>
@@ -55,14 +56,14 @@ main{padding:0 16px 32px}
   </div>
   <div class="stats">
     <div><b id="sFloor">–</b><span>Erfasste Bodenfläche</span></div>
-    <div><b id="sSize">–</b><span>Ausdehnung (Wände/Hohes)</span></div>
-    <div><b id="sPts">–</b><span>Messwürfel à 5 cm</span></div>
+    <div><b id="sSize">–</b><span id="sSizeL">Raummaß Wand zu Wand</span></div>
+    <div><b id="sPts">–</b><span id="sPtsL">Messwürfel à 5 cm</span></div>
     <div><b id="sWay">–</b><span>Zurückgelegter Weg</span></div>
     <div><b id="sPers" style="color:#C9A2FF">–</b><span>Personen im Sichtfeld</span></div>
     <div><b id="sPersD">–</b><span>Nächste Person</span></div>
   </div>
   <div class="card">
-    <b>So funktioniert es.</b> Jeder LiDAR-Messpunkt wird mit der aktuellen Handyposition in feste Raumkoordinaten umgerechnet und als 5-cm-Würfel gespeichert. Beim langsamen Gehen und Schwenken wächst so eine eigene Karte des Raums – ohne Raumpläne, Markierungen oder Messpunkte. Die Farbe zeigt die Höhe über dem Boden.
+    <b>So funktioniert es.</b> Jeder LiDAR-Messpunkt wird mit der aktuellen Handyposition in feste Raumkoordinaten umgerechnet und als 5-cm-Würfel gespeichert. Beim langsamen Gehen und Schwenken wächst so eine eigene Karte des Raums – ohne Raumpläne, Markierungen oder Messpunkte. Die Farbe zeigt die Höhe über dem Boden. Ein Würfel zählt erst, wenn er in mindestens drei Bildern gemessen wurde; Kantenpunkte und schnelle Schwenks werden verworfen. <b>Wände begradigen</b> sucht die Hauptrichtung des Raums, legt gerade Wandlinien durch die Punkte, schließt die Ecken und misst Wand zu Wand.
     <p style="margin:8px 0 0"><b>Tipps:</b> Handy zuerst kurz zum Boden neigen (Bodenerkennung), dann langsam die Wände entlang schwenken. Reichweite etwa 5 m. Glas, Spiegel und schwarze Flächen liefern wenig Punkte. Nicht erfasste Bereiche bleiben leer – sie sind <b>unbekannt</b>, nicht frei.</p>
   </div>
 </main>
@@ -73,17 +74,18 @@ main{padding:0 16px 32px}
 (function(){'use strict';
 const $=id=>document.getElementById(id);
 const NATIVE=window.LagebildNative||null;
-const VS=0.05;
-const M={on:false,keys:new Set(),pts:[],cells:new Map(),floorY:null,path:[],pose:null,way:0,view:'2d',follow:true,demo:false,lastRender:0,fps:[],dirty3d:false};
+let VS=0.05;
+const M={on:false,keys:new Set(),pts:[],cells:new Map(),floorY:null,path:[],pose:null,way:0,view:'2d',follow:true,straight:true,walls:null,wallsT:-1e9,theta:0,demo:false,lastRender:0,fps:[],dirty3d:false};
 window.__RK=M;
 function setState(t,c,d){const e=$('state');e.textContent=t;e.className='state'+(c?' '+c:'');$('detail').textContent=d||''}
 const fmtM=v=>v.toFixed(1).replace('.',',')+' m';
 
 /* ---------- Daten aufnehmen ---------- */
 function addVoxel(ix,iy,iz){const k=ix+','+iy+','+iz;if(M.keys.has(k))return;M.keys.add(k);M.pts.push(ix,iy,iz);
-  const ck=ix*100003+iz;const y=iy*VS;const c=M.cells.get(ck);if(!c)M.cells.set(ck,{ix,iz,min:y,max:y,n:1});else{if(y<c.min)c.min=y;if(y>c.max)c.max=y;c.n++}M.dirty3d=true}
+  const ck=ix*100003+iz;const y=iy*VS;const c=M.cells.get(ck);const band=Math.floor(y/0.1);if(!c)M.cells.set(ck,{ix,iz,min:y,max:y,n:1,b:new Set([band])});else{if(y<c.min)c.min=y;if(y>c.max)c.max=y;c.n++;c.b.add(band)}M.dirty3d=true}
 function b64(s,T){const b=atob(s),u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return new T(u.buffer)}
 function onFrame(f){if(!M.on)return;
+  if(f.vs&&Math.abs(f.vs-VS)>1e-6){if(M.pts.length)clearMap();VS=f.vs;$('sPtsL').textContent='Messwürfel à '+Math.round(VS*100)+' cm'}
   if(f.vox){const a=b64(f.vox,Int16Array);for(let i=0;i+2<a.length;i+=3)addVoxel(a[i],a[i+1],a[i+2])}
   if(typeof f.floorY==='number')M.floorY=f.floorY;
   if(f.persons){M.persons=f.persons.filter(p=>p[5]>=0.5&&p[4]>0&&p.length>=9).map(p=>({x:p[6],z:p[8],d:p[4]}));const all=f.persons.filter(p=>p[5]>=0.5).length;$('sPers').textContent=all;const nd=M.persons.length?Math.min(...M.persons.map(p=>p.d)):NaN;$('sPersD').textContent=isFinite(nd)?fmtM(nd):'–'}
@@ -91,42 +93,86 @@ function onFrame(f){if(!M.on)return;
     if(!last||Math.hypot(p.x-last.x,p.z-last.z)>0.1){if(last)M.way+=Math.hypot(p.x-last.x,p.z-last.z);M.path.push(p)}M.pose=p}
   const now=performance.now();M.fps.push(now);while(M.fps.length&&M.fps[0]<now-2000)M.fps.shift();
   $('badge').textContent='LiDAR · '+(M.fps.length/2).toFixed(0)+' Bilder/s · Tracking: '+f.tracking+' · Boden '+(M.floorY!=null?'erkannt':'nicht erkannt');
-  if(f.tracking!=='normal')setState('Tracking eingeschränkt','live','Langsamer bewegen, mehr Licht oder strukturierte Flächen anvisieren. In dieser Zeit wird nichts in die Karte eingetragen.');
+  if(f.fast&&f.tracking==='normal')setState('Langsamer schwenken','live','Bei schnellen Bewegungen wird zur Genauigkeit nichts eingetragen.');
+  else if(f.tracking!=='normal')setState('Tracking eingeschränkt','live','Langsamer bewegen, mehr Licht oder strukturierte Flächen anvisieren. In dieser Zeit wird nichts in die Karte eingetragen.');
   else if(M.floorY==null)setState('Kartierung läuft','live','Boden noch nicht erkannt – Handy kurz Richtung Boden neigen. Höhenfarben folgen danach.');
   else setState('Kartierung läuft','good','Langsam gehen und die Wände entlang schwenken.');
-  if(f.nvox>=399000)setState('Speichergrenze erreicht','bad','Karte exportieren oder leeren.');
+  if(f.nvox>=(f.maxvox||400000)-1000)setState('Speichergrenze erreicht','bad','Karte exportieren oder leeren.');
   render()}
+
+/* ---------- Wände erkennen und begradigen ---------- */
+// 1) Hauptrichtung: Winkel, bei dem sich die Wandpunkte am stärksten in wenigen Linien bündeln (rechtwinkliger Raum)
+// 2) Wandlinien: Häufungen in der Projektion auf beide Achsen  3) Abschnitte entlang jeder Linie  4) Ecken schließen
+// Wandzelle: senkrecht durchgehend belegt – mindestens 7 verschiedene 10-cm-Höhenbänder zwischen 0,3 und 2,2 m über dem Boden
+// (Türöffnungen, Tische und Einzelpunkte zählen dadurch nicht als Wand)
+function wallPts(){const f=M.floorY!=null?M.floorY:null,P=[];for(const k of M.cells.values()){const base=f==null?k.min:f,lo=Math.floor((base+0.3)/0.1),hi=Math.floor((base+2.2)/0.1);let n=0;for(const b of k.b)if(b>=lo&&b<=hi)n++;if(n>=7)P.push((k.ix+0.5)*VS,(k.iz+0.5)*VS,k.max-base)}return P}
+function sharp(P,th,bin){const c=Math.cos(th),s=Math.sin(th),hu=new Map(),hv=new Map();for(let i=0;i<P.length;i+=3){const u=Math.floor((P[i]*c+P[i+1]*s)/bin),v=Math.floor((-P[i]*s+P[i+1]*c)/bin);hu.set(u,(hu.get(u)||0)+1);hv.set(v,(hv.get(v)||0)+1)}let q=0;for(const n of hu.values())q+=n*n;for(const n of hv.values())q+=n*n;return q}
+function lines(R,ax,bin){// R: [u,v,h,...] im gedrehten System; ax 0 → Linien u=const, 1 → v=const
+  const H=new Map();for(let i=0;i<R.length;i+=3){const b=Math.floor(R[i+ax]/bin);H.set(b,(H.get(b)||0)+1)}
+  const S=(b)=>(H.get(b-1)||0)*0.5+(H.get(b)||0)+(H.get(b+1)||0)*0.5;const minN=Math.max(10,0.5/VS);
+  const peaks=[...H.keys()].map(b=>[b,S(b)]).filter(([b,n])=>n>=minN&&n>=S(b-1)&&n>S(b+1)&&n>=S(b-2)&&n>=S(b+2)).sort((a,b)=>b[1]-a[1]);
+  const kept=[];for(const [b] of peaks){const pos=(b+0.5)*bin;if(kept.every(k=>Math.abs(k-pos)>0.18))kept.push(pos)}
+  const segs=[];for(const pos0 of kept){const near=[];let sp=0,n=0;for(let i=0;i<R.length;i+=3)if(Math.abs(R[i+ax]-pos0)<0.06){near.push([R[i+1-ax],R[i+2]]);sp+=R[i+ax];n++}
+    if(n<minN)continue;const pos=sp/n;near.sort((a,b)=>a[0]-b[0]);let a=0;
+    for(let i=1;i<=near.length;i++){if(i===near.length||near[i][0]-near[i-1][0]>0.35){const len=near[i-1][0]-near[a][0]+VS;const cnt=i-a;
+      if(len>=0.25&&cnt>=len/VS*0.35){const hs=near.slice(a,i).map(q=>q[1]).sort((x,y)=>x-y);segs.push({ax,pos,a:near[a][0],b:near[i-1][0]+VS,h:hs[Math.floor(hs.length*0.95)]})}a=i}}}
+  return segs}
+function findWalls(){const P=wallPts();if(P.length<60)return null;
+  let best=0,bq=-1;for(let d=0;d<90;d+=1){const q=sharp(P,d*Math.PI/180,0.06);if(q>bq){bq=q;best=d}}
+  for(let d=best-1;d<=best+1;d+=0.1){const q=sharp(P,d*Math.PI/180,0.03);if(q>bq){bq=q;best=d}}
+  let th=best*Math.PI/180;if(M.walls&&Math.abs(((th-M.theta)*180/Math.PI+45+90)%90-45)<0.8)th=M.theta;// stabil halten
+  const c=Math.cos(th),s=Math.sin(th),R=[];for(let i=0;i<P.length;i+=3)R.push(P[i]*c+P[i+1]*s,-P[i]*s+P[i+1]*c,P[i+2]);
+  const segs=[...lines(R,0,0.03),...lines(R,1,0.03)];
+  // Ecken schließen: Enden bis zur querlaufenden Wand verlängern oder kürzen
+  for(const g of segs)for(const end of ['a','b']){let bd=0.4,bp=null;for(const o of segs){if(o.ax===g.ax)continue;
+    const dEnd=Math.abs(o.pos-g[end]);const inRange=g.pos>=o.a-0.4&&g.pos<=o.b+0.4;const keeps=end==='a'?o.pos<g.b-0.15:o.pos>g.a+0.15;if(inRange&&keeps&&dEnd<bd){bd=dEnd;bp=o.pos}}if(bp!=null)g[end]=bp}
+  for(const g of segs)for(const o of segs){if(o.ax===g.ax)continue;for(const end of ['a','b'])if(Math.abs(o[end]-g.pos)<0.4&&o.pos>=g.a-0.05&&o.pos<=g.b+0.05&&(end==='a'?g.pos<o.b-0.15:g.pos>o.a+0.15))o[end]=g.pos}
+  for(let i=segs.length-1;i>=0;i--)if(segs[i].b-segs[i].a<0.2)segs.splice(i,1);
+  const long=segs.filter(g=>g.b-g.a>=0.9);const U=long.filter(g=>g.ax===0).map(g=>g.pos),V=long.filter(g=>g.ax===1).map(g=>g.pos);
+  const dimU=U.length>=2?Math.max(...U)-Math.min(...U):NaN,dimV=V.length>=2?Math.max(...V)-Math.min(...V):NaN;
+  return{theta:th,segs,dimU,dimV,n:P.length}}
+function updateWalls(){const now=performance.now();if(now-M.wallsT<900)return;M.wallsT=now;const w=findWalls();M.walls=w;if(w){M.theta=w.theta}M.dirty3dWalls=true}
 
 /* ---------- Grundriss ---------- */
 const c2=$('c2d');let view2={cx:0,cz:0,scale:60};
 function heightOf(c){const f=M.floorY!=null?M.floorY:(M.lowY!=null?M.lowY:null);return f==null?null:c.max-f}
 function render(force){const now=performance.now();if(!force&&now-M.lastRender<200)return;M.lastRender=now;
-  stats();if(M.view==='3d'){render3d();return}
+  if(M.straight)updateWalls();stats();if(M.view==='3d'){render3d();return}
+  const th=M.straight&&M.walls?M.theta:0,cT=Math.cos(th),sT=Math.sin(th),RU=(x,z)=>x*cT+z*sT,RV=(x,z)=>-x*sT+z*cT;
   const dpr=Math.min(2,window.devicePixelRatio||1),W=c2.clientWidth*dpr,H=c2.clientHeight*dpr;if(c2.width!==W||c2.height!==H){c2.width=W;c2.height=H}
   const c=c2.getContext('2d');c.fillStyle='#05080F';c.fillRect(0,0,W,H);
-  if(M.cells.size){let x0=1e9,x1=-1e9,z0=1e9,z1=-1e9;for(const k of M.cells.values()){if(k.ix<x0)x0=k.ix;if(k.ix>x1)x1=k.ix;if(k.iz<z0)z0=k.iz;if(k.iz>z1)z1=k.iz}
-    const spanX=(x1-x0+1)*VS,spanZ=(z1-z0+1)*VS;const fit=Math.min(W/(spanX+1),H/(spanZ+1));
-    if(M.follow){view2.scale=Math.min(fit,160*dpr);view2.cx=(x0+x1+1)/2*VS;view2.cz=(z0+z1+1)/2*VS}}
+  if(M.cells.size){let x0=1e9,x1=-1e9,z0=1e9,z1=-1e9;for(const k of M.cells.values()){const u=RU(k.ix*VS,k.iz*VS),v=RV(k.ix*VS,k.iz*VS);if(u<x0)x0=u;if(u>x1)x1=u;if(v<z0)z0=v;if(v>z1)z1=v}
+    const spanX=x1-x0+VS,spanZ=z1-z0+VS;const fit=Math.min(W/(spanX+1),H/(spanZ+1));
+    if(M.follow){view2.scale=Math.min(fit,160*dpr);view2.cx=(x0+x1+VS)/2;view2.cz=(z0+z1+VS)/2}}
   const s=view2.scale,ox=W/2-view2.cx*s,oz=H/2-view2.cz*s,px=Math.max(1,VS*s+0.5);
   // Raster 1 m
   c.strokeStyle='rgba(120,150,190,.10)';c.lineWidth=1;const gx0=Math.floor(-ox/s),gx1=Math.ceil((W-ox)/s),gz0=Math.floor(-oz/s),gz1=Math.ceil((H-oz)/s);
   c.beginPath();for(let g=gx0;g<=gx1;g++){c.moveTo(ox+g*s,0);c.lineTo(ox+g*s,H)}for(let g=gz0;g<=gz1;g++){c.moveTo(0,oz+g*s);c.lineTo(W,oz+g*s)}c.stroke();
   // Zellen: zuerst Boden, dann Gegenstände, dann Wände
   const layers=[[],[],[]];for(const k of M.cells.values()){const h=heightOf(k);const L=h==null?(k.max-k.min>0.8?2:1):h<0.06?0:h<1.0?1:2;layers[L].push(k)}
-  const cols=['#0E5A5A','#FFB020','#E8E2D6'];for(let L=0;L<3;L++){c.fillStyle=cols[L];for(const k of layers[L])c.fillRect(ox+k.ix*VS*s,oz+k.iz*VS*s,px,px)}
+  const cols=['#0E5A5A','#FFB020','#E8E2D6'],SW=(x,z)=>[ox+RU(x,z)*s,oz+RV(x,z)*s];const hasW=M.straight&&M.walls&&M.walls.segs.length;
+  for(let L=0;L<3;L++){c.fillStyle=cols[L];c.globalAlpha=hasW&&L===2?0.35:1;for(const k of layers[L]){const p=SW((k.ix+0.5)*VS,(k.iz+0.5)*VS);c.fillRect(p[0]-px/2,p[1]-px/2,px,px)}}c.globalAlpha=1;
+  // Begradigte Wände mit Längen
+  if(hasW){c.strokeStyle='#FFFFFF';c.lineWidth=Math.max(3*dpr,0.06*s);c.lineCap='square';c.beginPath();
+    for(const g of M.walls.segs){const A=g.ax===0?[g.pos,g.a]:[g.a,g.pos],B=g.ax===0?[g.pos,g.b]:[g.b,g.pos];c.moveTo(ox+A[0]*s,oz+A[1]*s);c.lineTo(ox+B[0]*s,oz+B[1]*s)}c.stroke();
+    c.font='600 '+(12*dpr)+'px system-ui';c.textAlign='center';c.textBaseline='middle';
+    for(const g of M.walls.segs){const L=g.b-g.a;if(L<0.6||L*s<46*dpr)continue;const m=(g.a+g.b)/2,X=ox+(g.ax===0?g.pos:m)*s,Z=oz+(g.ax===0?m:g.pos)*s;const t=L.toFixed(2).replace('.',',')+' m';
+      const tw=c.measureText(t).width+8*dpr;c.fillStyle='rgba(5,8,15,.85)';c.fillRect(X-tw/2,Z-9*dpr,tw,18*dpr);c.fillStyle='#FFE2A6';c.fillText(t,X,Z)}
+    c.textAlign='left';c.textBaseline='alphabetic'}
   // Weg
-  if(M.path.length>1){c.strokeStyle='#5B98FF';c.lineWidth=2*dpr;c.beginPath();M.path.forEach((p,i)=>{const X=ox+p.x*s,Z=oz+p.z*s;i?c.lineTo(X,Z):c.moveTo(X,Z)});c.stroke()}
+  if(M.path.length>1){c.strokeStyle='#5B98FF';c.lineWidth=2*dpr;c.beginPath();M.path.forEach((p,i)=>{const [X,Z]=SW(p.x,p.z);i?c.lineTo(X,Z):c.moveTo(X,Z)});c.stroke()}
   // Handy
-  if(M.pose){const X=ox+M.pose.x*s,Z=oz+M.pose.z*s,n=Math.hypot(M.pose.fx,M.pose.fz)||1,fx=M.pose.fx/n,fz=M.pose.fz/n,L=18*dpr;
+  if(M.pose){const [X,Z]=SW(M.pose.x,M.pose.z),n=Math.hypot(M.pose.fx,M.pose.fz)||1,fx=RU(M.pose.fx,M.pose.fz)/n,fz=RV(M.pose.fx,M.pose.fz)/n,L=18*dpr;
     c.fillStyle='rgba(255,90,95,.18)';c.beginPath();c.moveTo(X,Z);const a=Math.atan2(fz,fx);c.arc(X,Z,L*3,a-0.5,a+0.5);c.closePath();c.fill();
     c.fillStyle='#FF5A5F';c.beginPath();c.moveTo(X+fx*L,Z+fz*L);c.lineTo(X-fz*L*0.45,Z+fx*L*0.45);c.lineTo(X+fz*L*0.45,Z-fx*L*0.45);c.closePath();c.fill()}
   // Personen
-  if(M.persons)for(const q of M.persons){const X=ox+q.x*s,Z=oz+q.z*s;c.fillStyle='rgba(201,162,255,.25)';c.beginPath();c.arc(X,Z,0.35*s,0,7);c.fill();c.fillStyle='#C9A2FF';c.beginPath();c.arc(X,Z,Math.max(5*dpr,0.15*s),0,7);c.fill()}
+  if(M.persons)for(const q of M.persons){const [X,Z]=SW(q.x,q.z);c.fillStyle='rgba(201,162,255,.25)';c.beginPath();c.arc(X,Z,0.35*s,0,7);c.fill();c.fillStyle='#C9A2FF';c.beginPath();c.arc(X,Z,Math.max(5*dpr,0.15*s),0,7);c.fill()}
   // Maßstab
   c.fillStyle='#93A3B8';c.font=(12*dpr)+'px system-ui';c.fillRect(12*dpr,H-16*dpr,s,3*dpr);c.fillText('1 m',12*dpr,H-22*dpr)}
 function stats(){let floor=0,x0=1e9,x1=-1e9,z0=1e9,z1=-1e9,walls=0;for(const k of M.cells.values()){const h=heightOf(k);if(h!=null&&h<0.06)floor++;if(h!=null&&h>=1.0){walls++;if(k.ix<x0)x0=k.ix;if(k.ix>x1)x1=k.ix;if(k.iz<z0)z0=k.iz;if(k.iz>z1)z1=k.iz}}
   $('sFloor').textContent=M.floorY!=null||M.demo?(floor*VS*VS).toFixed(1).replace('.',',')+' m²':'–';
-  $('sSize').textContent=walls?fmtM((x1-x0+1)*VS)+' × '+fmtM((z1-z0+1)*VS):'–';
+  const W=M.straight&&M.walls;if(W&&isFinite(W.dimU)&&isFinite(W.dimV)){const a=Math.max(W.dimU,W.dimV),b=Math.min(W.dimU,W.dimV);$('sSize').textContent=a.toFixed(2).replace('.',',')+' × '+b.toFixed(2).replace('.',',')+' m';$('sSizeL').textContent='Raummaß Wand zu Wand ('+W.segs.length+' Wandstücke)'}
+  else{$('sSize').textContent=walls?fmtM((x1-x0+1)*VS)+' × '+fmtM((z1-z0+1)*VS):'–';$('sSizeL').textContent=M.straight?'Ausdehnung (noch keine zwei Wandpaare)':'Ausdehnung (Wände/Hohes)'}
   $('sPts').textContent=(M.pts.length/3).toLocaleString('de-DE');$('sWay').textContent=M.way?fmtM(M.way):'–'}
 // Verschieben und Zoomen im Grundriss
 let drag=null,pinch=null;c2.addEventListener('pointerdown',e=>{drag={x:e.clientX,y:e.clientY};c2.setPointerCapture(e.pointerId)});
@@ -154,6 +200,12 @@ function render3d(){init3d();if(!T3){$('detail').textContent='3D-Ansicht konnte 
   if(M.dirty3d){for(let i=0;i<n;i++){const x=M.pts[i*3]*VS,y=M.pts[i*3+1]*VS,z=M.pts[i*3+2]*VS;T3.pos[i*3]=x;T3.pos[i*3+1]=y-fY;T3.pos[i*3+2]=z;const c=colorFor(y);T3.col[i*3]=c[0];T3.col[i*3+1]=c[1];T3.col[i*3+2]=c[2]}
     T3.g.setDrawRange(0,n);T3.g.attributes.position.needsUpdate=true;T3.g.attributes.color.needsUpdate=true;M.dirty3d=false;
     if(!T3.centered&&n>500&&T3.ctl){let sx=0,sz=0;for(let i=0;i<n;i++){sx+=T3.pos[i*3];sz+=T3.pos[i*3+2]}T3.ctl.target.set(sx/n,0.8,sz/n);T3.cam.position.set(sx/n+4,4.5,sz/n+5);T3.centered=true}}
+  if(M.dirty3dWalls||T3.wallsOn!==M.straight){M.dirty3dWalls=false;T3.wallsOn=M.straight;if(T3.wg){T3.sc.remove(T3.wg);T3.wg.traverse(o=>{if(o.geometry)o.geometry.dispose()})}T3.wg=new THREE.Group();
+    if(M.straight&&M.walls){const th=M.walls.theta,c=Math.cos(th),s=Math.sin(th),mat=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0.22,side:THREE.DoubleSide,depthWrite:false}),edge=new THREE.LineBasicMaterial({color:0xffffff});
+      for(const g of M.walls.segs){const L=g.b-g.a,h=Math.max(0.5,g.h),m=(g.a+g.b)/2,u=g.ax===0?g.pos:m,v=g.ax===0?m:g.pos;const x=u*c-v*s,z=u*s+v*c;
+        const geo=new THREE.PlaneGeometry(L,h),mesh=new THREE.Mesh(geo,mat);mesh.position.set(x,h/2,z);mesh.rotation.y=-th+(g.ax===0?Math.PI/2:0);T3.wg.add(mesh);
+        const e=new THREE.LineSegments(new THREE.EdgesGeometry(geo),edge);e.position.copy(mesh.position);e.rotation.copy(mesh.rotation);T3.wg.add(e)}}
+    T3.sc.add(T3.wg)}
   if(M.pose){T3.arrow.position.set(M.pose.x,M.pose.y-fY,M.pose.z);T3.arrow.rotation.set(0,0,0);T3.arrow.lookAt(M.pose.x+M.pose.fx,M.pose.y-fY,M.pose.z+M.pose.fz);T3.arrow.rotateX(Math.PI/2)}
   T3.r.render(T3.sc,T3.cam)}
 
@@ -162,7 +214,9 @@ function setFollow(on){M.follow=on;$('follow').setAttribute('aria-pressed',on?'t
 $('follow').onclick=()=>{setFollow(!M.follow);render(true)};
 $('v2d').onclick=()=>{M.view='2d';$('c2d').style.display='';$('c3d').style.display='none';$('v2d').setAttribute('aria-pressed','true');$('v3d').setAttribute('aria-pressed','false');render(true)};
 $('v3d').onclick=()=>{M.view='3d';$('c2d').style.display='none';$('c3d').style.display='';$('v2d').setAttribute('aria-pressed','false');$('v3d').setAttribute('aria-pressed','true');M.dirty3d=true;render(true)};
-$('clear').onclick=()=>{M.keys.clear();M.pts=[];M.cells.clear();M.path=[];M.way=0;M.dirty3d=true;if(T3)T3.centered=false;render(true)};
+function clearMap(){M.keys.clear();M.pts=[];M.cells.clear();M.path=[];M.way=0;M.walls=null;M.wallsT=-1e9;M.dirty3d=true;M.dirty3dWalls=true;if(T3)T3.centered=false}
+$('clear').onclick=()=>{clearMap();render(true)};
+$('straight').onclick=()=>{M.straight=!M.straight;$('straight').setAttribute('aria-pressed',M.straight?'true':'false');M.wallsT=-1e9;M.dirty3dWalls=true;render(true)};
 $('exp').onclick=()=>{const n=M.pts.length/3;if(!n){$('detail').textContent='Noch keine Punkte.';return}const fY=M.floorY!=null?M.floorY:0;
   let s='ply\nformat ascii 1.0\ncomment Lagebild Raumkarte, Meter, y = Höhe über Boden\nelement vertex '+n+'\nproperty float x\nproperty float y\nproperty float z\nproperty uchar red\nproperty uchar green\nproperty uchar blue\nend_header\n';
   const parts=[s];for(let i=0;i<n;i++){const x=M.pts[i*3]*VS,y=M.pts[i*3+1]*VS,z=M.pts[i*3+2]*VS;const c=colorFor(y);parts.push(x.toFixed(3)+' '+(y-fY).toFixed(3)+' '+z.toFixed(3)+' '+Math.round(c[0]*255)+' '+Math.round(c[1]*255)+' '+Math.round(c[2]*255)+'\n')}
@@ -178,15 +232,18 @@ document.addEventListener('visibilitychange',()=>{if(document.hidden&&M.on)stop(
 window.addEventListener('resize',()=>render(true));
 
 /* ---------- Beispielraum ohne App ---------- */
-function demo(){M.demo=true;M.keys.clear();M.pts=[];M.cells.clear();M.path=[];M.way=0;M.floorY=0;M.dirty3d=true;
-  const R=(a,b)=>a+Math.random()*(b-a);const A=(x,y,z)=>addVoxel(x,y,z);const V=m=>Math.round(m/VS);
-  for(let x=0;x<V(5);x++)for(let z=0;z<V(4);z++)if(Math.random()<0.85)A(x,0,z);
-  for(let y=0;y<V(2.5);y++){for(let x=0;x<V(5);x++){if(!(x>V(3.8)&&x<V(4.7)&&y<V(2.05)))A(x,y,0);if(!(x>V(1)&&x<V(2.4)&&y>V(0.9)&&y<V(2.1)))A(x,y,V(4)-1)}for(let z=0;z<V(4);z++){A(0,y,z);A(V(5)-1,y,z)}}
-  for(let x=V(1.2);x<V(2.6);x++)for(let z=V(1.4);z<V(2.3);z++)A(x,V(0.75),z);
-  for(let x=V(3.4);x<V(4.9);x++)for(let z=V(2.9);z<V(3.85);z++)A(x,V(0.45),z);
-  for(let i=0;i<40;i++)A(V(R(2.9,3.2)),V(R(0.05,0.18)),V(R(0.9,1.2)));
-  M.path=[{x:4.2,y:1.4,z:0.4},{x:3.6,y:1.4,z:1.2},{x:2.9,y:1.4,z:2.6},{x:1.5,y:1.4,z:3.1}];M.way=3.2;M.pose={x:1.5,y:1.4,z:3.1,fx:-0.5,fz:-1};
-  setState('Beispielraum','live','Ohne App und LiDAR siehst du hier eine simulierte Karte: 5 × 4 m mit Tür, Fenster, Tisch, Sofa und einer Tasche am Boden.');render(true)}
+function demo(){clearMap();VS=0.03;$('sPtsL').textContent='Messwürfel à 3 cm';M.demo=true;M.floorY=0;M.walls=null;M.wallsT=-1e9;
+  // Simulierter Raum 5,0 × 4,0 m, schräg zur Startrichtung (17°), mit Messrauschen (±1,5 cm) und einzelnen Ausreißern
+  const th=17*Math.PI/180,c=Math.cos(th),s=Math.sin(th),N=()=>(Math.random()+Math.random()+Math.random()-1.5)*0.017;
+  const P=(x,y,z)=>{x+=N();z+=N();y+=N()*0.5;const X=x*c-z*s,Z=x*s+z*c;addVoxel(Math.floor(X/VS),Math.floor(y/VS),Math.floor(Z/VS))};
+  const st=0.03;for(let x=0;x<5;x+=st)for(let z=0;z<4;z+=st)if(Math.random()<0.8)P(x,0,z);
+  for(let y=0;y<2.5;y+=st){for(let x=0;x<5;x+=st){if(!(x>3.8&&x<4.7&&y<2.05))P(x,y,0);if(!(x>1&&x<2.4&&y>0.9&&y<2.1))P(x,y,4)}for(let z=0;z<4;z+=st){P(0,y,z);P(5,y,z)}}
+  for(let x=1.2;x<2.6;x+=st)for(let z=1.4;z<2.3;z+=st)P(x,0.75,z);
+  for(let x=3.4;x<4.9;x+=st)for(let z=2.9;z<3.85;z+=st)P(x,0.45,z);
+  for(let i=0;i<60;i++)P(2.9+Math.random()*0.3,0.05+Math.random()*0.15,0.9+Math.random()*0.3);
+  for(let i=0;i<300;i++)P(Math.random()*5,Math.random()*2.4,Math.random()*4);
+  const R=(x,z)=>({x:x*c-z*s,z:x*s+z*c});M.path=[[4.2,0.4],[3.6,1.2],[2.9,2.6],[1.5,3.1]].map(([x,z])=>Object.assign(R(x,z),{y:1.4}));M.way=3.2;const p=M.path[3],f=R(-0.5,-1);M.pose={x:p.x,y:1.4,z:p.z,fx:f.x,fz:f.z};
+  setState('Beispielraum','live','Simuliert: 5,00 × 4,00 m, schräg gemessen, mit Rauschen. „Wände begradigen“ richtet ihn aus und misst Wand zu Wand.');render(true)}
 if(!(NATIVE&&NATIVE.caps&&NATIVE.caps.lidarMap)){$('go').textContent='Beispielraum anzeigen';$('detail').textContent='Die echte Kartierung läuft in der Lagebild-App auf einem iPhone mit LiDAR.'}
 render(true);
 })();

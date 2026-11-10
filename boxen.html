@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Schlaganalyse</title>
+<style>
+:root{--line:rgba(120,150,190,.22);--text:#F3EFE7;--muted:#93A3B8;--amber:#FFB020;--teal:#35E0C8;--red:#FF5A5F;--blue:#5B98FF;--violet:#C9A2FF;
+  --fd:"Barlow Semi Condensed","SF Pro Display",system-ui,sans-serif;--fb:-apple-system,system-ui,sans-serif;color-scheme:dark}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:#070C16;color:var(--text);font-family:var(--fb);font-size:17px;line-height:1.35;overflow:hidden}
+html.cam,html.cam body{background:transparent}
+#ov{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none}
+.top{position:fixed;left:0;right:0;top:0;padding:calc(env(safe-area-inset-top,0px) + 8px) 12px 0;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+.bar{display:flex;justify-content:space-between;align-items:center;pointer-events:auto}
+h1{font-family:var(--fd);font-weight:700;font-size:24px;margin:0;color:#FFE2A6;line-height:1;text-shadow:0 1px 3px #000}
+.bar a{color:var(--muted);font-size:14px;text-shadow:0 1px 3px #000}
+.hit{background:rgba(7,12,22,.72);border:1px solid var(--line);border-radius:18px;padding:10px 14px;display:grid;grid-template-columns:1fr auto;align-items:end;gap:2px 12px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.hit .type{font-family:var(--fd);font-weight:700;font-size:30px;line-height:1.05}
+.hit .sub{font-size:13px;color:var(--muted);grid-column:1}
+.hit .spd{grid-row:1/3;grid-column:2;text-align:right;font-family:var(--fd);font-weight:700;font-size:54px;line-height:.95;color:var(--amber);font-variant-numeric:tabular-nums}
+.hit .spd small{display:block;font-size:14px;font-weight:600;color:var(--muted)}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chips span{background:rgba(7,12,22,.72);border:1px solid var(--line);border-radius:10px;padding:3px 8px;font-size:13px;font-variant-numeric:tabular-nums}
+.live{font-size:12px;color:var(--muted);text-shadow:0 1px 3px #000;font-variant-numeric:tabular-nums}
+.panel{position:fixed;left:0;right:0;bottom:0;padding:10px 12px calc(env(safe-area-inset-bottom,0px) + 10px);background:linear-gradient(180deg,rgba(7,12,22,0),rgba(7,12,22,.85) 30%)}
+.row{display:flex;gap:8px;margin-top:8px}
+button,select,input{font:inherit}
+.go{flex:2;min-height:56px;border:0;border-radius:16px;background:linear-gradient(180deg,#FFC14D,#F49E00);color:#1A1200;font-family:var(--fd);font-weight:700;font-size:21px}
+.go.stop{background:rgba(33,48,70,.9);color:var(--text);border:1px solid var(--line)}
+.sec{flex:1;min-height:48px;border-radius:14px;border:1px solid var(--line);background:rgba(33,48,70,.85);color:var(--text);font-family:var(--fd);font-weight:600;font-size:15px;padding:0 6px}
+.sec[aria-pressed="true"]{border-color:var(--amber);color:var(--amber)}
+.state{text-align:center;font-size:14px;color:var(--muted);min-height:1.3em}
+.state.bad{color:var(--red)}.state.good{color:var(--teal)}
+.setup{position:fixed;left:0;right:0;top:calc(env(safe-area-inset-top,0px) + 50px);bottom:190px;overflow:auto;padding:0 14px}
+html.cam .setup,html.run .setup{display:none}
+.card{background:rgba(24,36,54,.9);border:1px solid var(--line);border-radius:16px;padding:12px 14px;margin-top:10px;font-size:14px;color:var(--muted)}
+.card b{color:var(--text)}.card ul{margin:6px 0 0;padding-left:18px}
+.f{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px;color:var(--text)}
+.f input,.f select{background:#0E1626;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:8px 10px;min-height:44px;width:9em}
+.rnd{display:none;background:rgba(7,12,22,.72);border:1px solid var(--line);border-radius:18px;padding:8px 12px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+html.rmode .rnd{display:block}
+html.rmode .chips,html.rmode #stats{display:none!important}
+.rnd .clk{display:flex;justify-content:space-between;align-items:baseline}
+.rnd .clk b{font-family:var(--fd);font-weight:700;font-size:44px;line-height:1;font-variant-numeric:tabular-nums}
+.rnd .clk b.warn{color:var(--red)}.rnd .clk b.pause{color:var(--teal)}
+.rnd .clk span{font-size:14px;color:var(--muted)}.rnd .clk span strong{font-family:var(--fd);font-size:28px;color:var(--amber);font-variant-numeric:tabular-nums}
+.cnt{display:grid;grid-template-columns:repeat(3,1fr);gap:4px 10px;margin-top:6px}
+.cnt div{display:flex;justify-content:space-between;font-size:14px;color:var(--muted);border-radius:6px;padding:1px 4px;transition:background .3s}
+.cnt div b{color:var(--text);font-variant-numeric:tabular-nums}.cnt div.flash{background:rgba(255,176,32,.35)}
+.report{position:fixed;inset:0;display:none;background:rgba(7,12,22,.98);overflow:auto;padding:calc(env(safe-area-inset-top,0px) + 14px) 14px calc(env(safe-area-inset-bottom,0px) + 20px);z-index:5}
+.report.on{display:block}
+.report h2{font-family:var(--fd);font-size:28px;margin:0 0 4px;color:#FFE2A6}
+.report table{width:100%;border-collapse:collapse;font-size:14px;margin-top:8px;font-variant-numeric:tabular-nums}
+.report th{text-align:left;color:var(--muted);font-weight:500;padding:4px 2px;border-bottom:1px solid var(--line)}
+.report td{padding:5px 2px;border-bottom:1px solid rgba(120,150,190,.1)}.report td:not(:first-child),.report th:not(:first-child){text-align:right}
+.report .kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px}
+.report .kpi div{background:rgba(24,36,54,.9);border:1px solid var(--line);border-radius:12px;padding:6px 8px;font-size:11px;color:var(--muted)}
+.report .kpi b{display:block;font-family:var(--fd);font-size:22px;color:var(--text)}
+.report ul{padding-left:18px;margin:6px 0;font-size:14px}
+.report .next{font-family:var(--fd);font-size:20px;color:var(--teal);margin-top:10px}
+.align{display:none;background:rgba(7,12,22,.8);border:1px solid var(--line);border-radius:18px;padding:10px 12px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+html.amode .align{display:block}html.amode .hit,html.amode .chips{display:none}
+.align .msg{font-family:var(--fd);font-weight:700;font-size:24px;line-height:1.15}
+.align .msg.ok{color:var(--teal)}.align .msg.bad{color:var(--amber)}
+.align ul{list-style:none;padding:0;margin:8px 0 0;display:grid;grid-template-columns:1fr 1fr;gap:3px 10px;font-size:14px}
+.align li{color:var(--muted)}.align li::before{content:'○ ';color:var(--muted)}.align li.ok{color:var(--text)}.align li.ok::before{content:'✓ ';color:var(--teal)}.align li.no::before{content:'✗ ';color:var(--red)}.align li.no{color:var(--text)}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px}
+.stats div{background:rgba(7,12,22,.72);border:1px solid var(--line);border-radius:12px;padding:6px 8px;font-size:11px;color:var(--muted)}
+.stats b{display:block;font-family:var(--fd);font-size:19px;color:var(--text);font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+<canvas id="ov"></canvas>
+<div class="top">
+  <div class="bar"><h1>Schlaganalyse</h1><span><a href="raumsicht.html">Raumsicht</a> · <a href="./">Lagebild</a></span></div>
+  <div class="hit" id="hit" aria-live="polite"><div class="type" id="hType">–</div><div class="spd" id="hSpd">–<small>km/h</small></div><div class="sub" id="hSub">Noch kein Schlag</div></div>
+  <div class="align" id="align" aria-live="polite"><div class="msg bad" id="aMsg">Kamera-Check</div><div class="live" id="aSub"></div><ul id="aList"></ul></div>
+  <div class="rnd" id="rnd"><div class="clk"><b id="rClock">1:00</b><span id="rInfo">Runde 1 von 3</span><span><strong id="rTotal">0</strong> Schläge</span></div><div class="cnt" id="rCnt"></div></div>
+  <div class="chips" id="chips"></div>
+  <div class="live" id="live"></div>
+</div>
+<div class="setup" id="setup">
+  <div class="card">
+    <b>Aufstellen.</b>
+    <ul>
+      <li><b>Nicht hinter den Sack</b>, sondern seitlich davon: Kamera schräg von vorn (ca. 45°) auf dich, der Sack am Bildrand. Sonst verdeckt der Sack Fäuste und Beine.</li>
+      <li><b>Abstand 2,5–3 m</b> zu dir, <b>Höhe 1,0–1,2 m</b> (Hüfte bis Bauchnabel), Handy <b>senkrecht</b> und nicht geneigt. Ganzer Körper im Bild – Kopf und Füße mit etwas Rand.</li>
+      <li>Bei Linksauslage steht die Kamera am besten <b>links vor dir</b> (Führhandseite), bei Rechtsauslage rechts vor dir.</li>
+      <li><b>Helles Licht.</b> Bei 240 Bildern/s ist die Belichtung kurz; im Halbdunkel verwischen Fäuste.</li>
+      <li>Einmal <b>gerade hinstellen</b> und „Kalibrieren“ tippen (2 s) – daraus wird der Maßstab in Metern.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <div class="f"><span>Körpergröße</span><input id="height" type="number" inputmode="numeric" min="120" max="230" step="1"> </div>
+    <div class="f"><span>Kamera-Check vor dem Start</span><select id="aOn"><option value="1">an (mit Sprachhilfe)</option><option value="0">aus</option></select></div>
+    <div class="f"><span>Rundenzeit</span><select id="rLen"><option value="0">aus (frei)</option><option value="30">30 Sekunden</option><option value="60">1 Minute</option><option value="120">2 Minuten</option><option value="180">3 Minuten</option></select></div>
+    <div class="f"><span>Runden</span><select id="rNum"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>8</option><option>10</option><option>12</option></select></div>
+    <div class="f"><span>Pause</span><select id="rPause"><option value="15">15 Sekunden</option><option value="30">30 Sekunden</option><option value="60">1 Minute</option></select></div>
+    <div class="f"><span>Auslage</span><select id="stance"><option value="orth">Linksauslage (links vorn)</option><option value="south">Rechtsauslage (rechts vorn)</option></select></div>
+  </div>
+  <div class="card">
+    <b>Was gemessen wird.</b> Apple Vision erkennt bei jedem Kamerabild Schultern, Ellbogen, Handgelenke, Hüfte, Knie und Füße.
+    Aus der Bahn der Handgelenke und Knöchel ergeben sich Schlagart und Spitzengeschwindigkeit.
+    <ul>
+      <li><b>Gerade</b> (Jab/Cross): Arm am Ende gestreckt, Bahn gerade.</li>
+      <li><b>Haken:</b> Arm angewinkelt, Bahn im Bogen. <b>Uppercut:</b> angewinkelt, Bahn nach oben.</li>
+      <li><b>Tritte:</b> Low-Kick (Fuß bleibt unter Kniehöhe), Front-Kick (Bein gestreckt, gerade), Roundhouse (Bogen).</li>
+    </ul>
+    <p style="margin:8px 0 0"><b>Genauigkeit:</b> grob ±10–15 % bei 240 Bilder/s und gutem Licht, schlechter bei weniger Bildern. Gemessen wird das Handgelenk bzw. der Knöchel – die Faust und die Fußspitze sind etwas schneller. Schläge genau auf die Kamera zu werden teilweise hochgerechnet (Armlänge ist bekannt). Für Vergleiche zwischen Trainings mit gleichem Aufbau ist der Wert verlässlicher als absolut.</p>
+  </div>
+  <div class="card" id="noApp" style="display:none"><b>Echtzeit braucht die Lagebild-App ab Version 0.4.</b> Im Browser läuft nur die Vorführung mit einem simulierten Boxer.</div>
+</div>
+<div class="report" id="report" role="dialog" aria-live="polite"><div id="repBody"></div><div class="row"><button class="go" id="repClose">Weiter</button></div></div>
+<div class="panel">
+  <div class="stats" id="stats" style="display:none">
+    <div><b id="stN">0</b>Schläge/Tritte</div><div><b id="stBest">–</b>Bestwert</div><div><b id="stRate">–</b>pro Minute</div>
+  </div>
+  <div class="state" id="state">Bereit</div>
+  <div class="row"><button class="go" id="go">Start</button><button class="sec" id="cal">Kalibrieren</button></div>
+  <div class="row"><button class="sec" id="voice" aria-pressed="true">Ansage</button><button class="sec" id="demo">Vorführung</button><button class="sec" id="reset">Zurücksetzen</button></div>
+</div>
+
+<script>
+(function(){'use strict';
+const $=id=>document.getElementById(id);
+const NATIVE=window.LagebildNative||null;
+const CAN=!!(NATIVE&&NATIVE.caps&&NATIVE.caps.pose);
+const ls=(k,v)=>{try{if(v===undefined)return localStorage.getItem(k);localStorage.setItem(k,v)}catch(e){return null}};
+// Gelenk-Reihenfolge wie in der App (PoseTracker.swift)
+const J={nose:0,neck:1,lSh:2,rSh:3,lEl:4,rEl:5,lWr:6,rWr:7,root:8,lHip:9,rHip:10,lKn:11,rKn:12,lAn:13,rAn:14},NJ=15;
+const BONES=[[0,1],[1,2],[1,3],[2,4],[4,6],[3,5],[5,7],[1,8],[8,9],[8,10],[9,11],[11,13],[10,12],[12,14]];
+const S={on:false,src:null,vw:720,vh:1280,hist:[],spans:[],calib:null,calibUntil:0,calibSpans:[],H:(+ls('bx.h')||178)/100,stance:ls('bx.st')||'orth',voice:ls('bx.v')!=='0',
+  strikes:[],state:{},fps:0,cam:0,drop:0,tStart:0,lastT:0,demoTimer:null};
+window.__BX=S;
+$('height').value=Math.round(S.H*100);$('stance').value=S.stance;$('voice').setAttribute('aria-pressed',S.voice);
+$('height').onchange=()=>{const v=+$('height').value;if(v>=120&&v<=230){S.H=v/100;ls('bx.h',v)}};
+$('stance').onchange=()=>{S.stance=$('stance').value;ls('bx.st',S.stance)};
+$('voice').onclick=()=>{S.voice=!S.voice;ls('bx.v',S.voice?'1':'0');$('voice').setAttribute('aria-pressed',S.voice)};
+if(!CAN){$('noApp').style.display='';$('go').textContent='Vorführung starten'}
+function setState(t,c){const e=$('state');e.textContent=t;e.className='state'+(c?' '+c:'')}
+
+/* ---------- Maßstab ---------- */
+// Nase bis Knöchelmitte ≈ 0,89 × Körpergröße (aufrecht stehend)
+function spanPx(p){if(p[J.nose*3+2]<0.3||p[J.lAn*3+2]<0.3||p[J.rAn*3+2]<0.3)return null;const ax=(p[J.lAn*3]+p[J.rAn*3])/2,ay=(p[J.lAn*3+1]+p[J.rAn*3+1])/2;return Math.hypot(ax-p[J.nose*3],ay-p[J.nose*3+1])}
+function mpp(){if(S.calib)return S.calib;if(S.spans.length<10)return null;const a=[...S.spans].sort((x,y)=>x-y);return 0.89*S.H/a[Math.floor(a.length*0.8)]}
+$('cal').onclick=()=>{if(!S.on){setState('Erst starten, dann gerade hinstellen und Kalibrieren tippen.','bad');return}S.calibSpans=[];S.calibUntil=S.lastT+2;setState('Kalibriere … 2 Sekunden gerade und ruhig stehen.')};
+
+/* ---------- Daten ---------- */
+// Probe: {t, p: Float32Array(45) in Bildpunkten (x rechts, y unten)}
+function ingest(t,raw){const p=new Float32Array(NJ*3);for(let j=0;j<NJ;j++){p[j*3]=raw[j*3]*S.vw;p[j*3+1]=raw[j*3+1]*S.vh;p[j*3+2]=raw[j*3+2]}
+  S.hist.push({t,p});S.lastT=t;while(S.hist.length&&S.hist[0].t<t-3)S.hist.shift();
+  const sp=spanPx(p);
+  if(sp){if(S.calibUntil>t)S.calibSpans.push(sp);else if(S.calibSpans.length){const a=S.calibSpans.sort((x,y)=>x-y);if(a.length>=10){S.calib=0.89*S.H/a[a.length>>1];setState('Kalibriert: '+(S.calib*1000).toFixed(2).replace('.',',')+' mm pro Bildpunkt','good')}else setState('Kalibrieren fehlgeschlagen – ganzer Körper muss sichtbar sein.','bad');S.calibSpans=[]}
+    // automatisch: ruhige Momente sammeln
+    const old=S.hist.find(h=>h.t>=t-0.25);if(old&&old.p[J.root*3+2]>0.3&&Math.hypot(old.p[J.root*3]-p[J.root*3],old.p[J.root*3+1]-p[J.root*3+1])<sp*0.01){S.spans.push(sp);if(S.spans.length>120)S.spans.shift()}}
+  alignTick();detect()}
+// Geschwindigkeit eines Gelenks bei Index i: Ausgleichsgerade über ±k Proben (Bildpunkte/s)
+function vel(i,j){const k=S.fps>=150?3:S.fps>=90?2:1;let n=0,st=0,sx=0,sy=0,stt=0,stx=0,sty=0;
+  for(let q=i-k;q<=i+k;q++){const h=S.hist[q];if(!h||h.p[j*3+2]<0.15)continue;const t=h.t;n++;st+=t;sx+=h.p[j*3];sy+=h.p[j*3+1];stt+=t*t;stx+=t*h.p[j*3];sty+=t*h.p[j*3+1]}
+  if(n<2)return null;const d=n*stt-st*st;if(d<=1e-12)return null;return[(n*stx-st*sx)/d,(n*sty-st*sy)/d]}
+const P=(h,j)=>[h.p[j*3],h.p[j*3+1]],C=(h,j)=>h.p[j*3+2];
+const dist=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1]);
+function angle(a,b,c){const u=[a[0]-b[0],a[1]-b[1]],v=[c[0]-b[0],c[1]-b[1]];const d=Math.hypot(...u)*Math.hypot(...v)||1;return Math.acos(Math.max(-1,Math.min(1,(u[0]*v[0]+u[1]*v[1])/d)))*180/Math.PI}
+const LIMBS=[{id:'lWr',j:J.lWr,hand:true,left:true},{id:'rWr',j:J.rWr,hand:true,left:false},{id:'lAn',j:J.lAn,hand:false,left:true},{id:'rAn',j:J.rAn,hand:false,left:false}];
+
+/* ---------- Schläge erkennen ---------- */
+function detect(){const m=mpp();if(!m)return;const k=S.fps>=150?3:S.fps>=90?2:1;const i=S.hist.length-1-k;if(i<k+1)return;const h=S.hist[i];
+  const vr=vel(i,J.root)||[0,0];let maxHand=0;
+  for(const L of LIMBS){const v=vel(i,L.j);if(!v)continue;const sp=Math.hypot(v[0],v[1])*m,rel=Math.hypot(v[0]-vr[0],v[1]-vr[1])*m;if(L.hand)maxHand=Math.max(maxHand,sp);
+    const st=S.state[L.id]||(S.state[L.id]={on:false,i0:0,peak:0,peakT:0,cool:0});
+    const on=L.hand?2.5:3.0,off=L.hand?1.2:1.5;
+    if(!st.on){if(rel>on&&h.t>st.cool){st.on=true;let b=i;while(b>0&&S.hist[i].t-S.hist[b-1].t<0.3){const vb=vel(b-1,L.j);if(!vb||Math.hypot(vb[0]-vr[0],vb[1]-vr[1])*m<1.0)break;b--}st.i0=b;st.t0=S.hist[b].t;st.peak=rel;st.peakT=h.t}}
+    else{if(rel>st.peak){st.peak=rel;st.peakT=h.t}
+      if((rel<off&&h.t-st.peakT>0.03)||h.t-st.t0>0.8){st.on=false;st.cool=h.t+0.25;analyse(L,st.t0,h.t,m)}}}
+  S.liveHand=maxHand}
+function idxAt(t){let lo=0,hi=S.hist.length-1;while(lo<hi){const mid=(lo+hi)>>1;if(S.hist[mid].t<t)lo=mid+1;else hi=mid}return lo}
+function analyse(L,t0,t1,m){const i0=idxAt(t0),i1=idxAt(t1);if(i1-i0<2)return;const H=S.H;
+  const lead=S.stance==='orth'?L.left:!L.left;
+  const base=L.hand?(L.left?J.lSh:J.rSh):(L.left?J.lHip:J.rHip),mid=L.hand?(L.left?J.lEl:J.rEl):(L.left?J.lKn:J.rKn);
+  const Lseg=L.hand?0.33*H:0.49*H;// Armlänge Schulter–Handgelenk, Beinlänge Hüfte–Knöchel
+  let vmax=0,iv=i0,emax=0,ie=i0,path=0,prev=null,minY=1e9,iy=i0;const pts=[];
+  for(let i=i0;i<=i1;i++){const h=S.hist[i];if(C(h,L.j)<0.15)continue;const v=vel(i,L.j);if(v){const s=Math.hypot(v[0],v[1])*m;if(s>vmax){vmax=s;iv=i}}
+    const e=C(h,base)>0.15?dist(P(h,L.j),P(h,base))*m:0;if(e>emax){emax=e;ie=i}
+    const q=P(h,L.j);if(prev)path+=dist(q,prev)*m;prev=q;pts.push([q[0],q[1],v?Math.hypot(v[0],v[1])*m:0]);if(q[1]<minY){minY=q[1];iy=i}}
+  if(pts.length<4||t1-t0<0.07)return;
+  // nur Bewegungen vom Körper weg (Rückholbewegung und Messsprünge verwerfen)
+  const e0=C(S.hist[i0],base)>0.15?dist(P(S.hist[i0],L.j),P(S.hist[i0],base))*m:emax;
+  if(L.hand&&(ie<=i0+1||emax-e0<0.06))return;
+  if(!L.hand&&(P(S.hist[i0],L.j)[1]-minY)*m<0.12*H)return;
+  if(vmax>(L.hand?20:35))return;
+  const ik=L.hand?ie:iy,hp=S.hist[ik],h0=S.hist[i0];const a=angle(P(hp,base),P(hp,mid),P(hp,L.j));
+  const d=[(P(hp,L.j)[0]-P(h0,L.j)[0])*m,(P(hp,L.j)[1]-P(h0,L.j)[1])*m],dl=Math.hypot(d[0],d[1]),straight=path>0?dl/path:0;
+  let type,f=1,cat;
+  if(L.hand){if(vmax<3)return;
+    if(-d[1]>0.55*dl&&a<150){type=lead?'Uppercut Führhand':'Uppercut Schlaghand';cat='upper'}
+    else if(a>=145&&straight>=0.72){type=lead?'Jab':'Cross';cat='straight';f=Math.max(1,Math.min(2.2,Lseg/Math.max(0.05,emax)))}
+    else{type=lead?'Haken Führhand':'Haken Schlaghand';cat='hook'}}
+  else{const other=L.left?J.rAn:J.lAn;const floorY=Math.max(P(S.hist[iy],other)[1],P(h0,L.j)[1]);const lift=(floorY-minY)*m;
+    if(vmax<4||lift<0.12*H)return;
+    const tw=h=>dist(P(h,J.lSh),P(h,J.rSh))+dist(P(h,J.lHip),P(h,J.rHip)),w0=tw(h0),w1=tw(hp),rot=Math.abs(w1-w0)/Math.max(w0,w1,1);
+    if(lift<0.3*H){type='Low-Kick';cat='low'}
+    else if(rot>0.3||straight<0.75){type='Roundhouse';cat='round'}
+    else if(a>=140){type='Front-Kick';cat='front';f=Math.max(1,Math.min(2,Lseg/Math.max(0.05,emax)))}
+    else{type='Roundhouse';cat='round'}
+    type+=lead?' (vorderes Bein)':' (hinteres Bein)'}
+  const v=vmax*f;const st={type,cat,hand:L.hand,v,v2d:vmax,f,dur:t1-t0,t:t1,pts,peak:P(S.hist[iv],L.j),angle:a,straight};
+  S.strikes.push(st);show(st)}
+
+/* ---------- Kamera-Check: sagt, ob Handy und Sportler richtig stehen ---------- */
+// Annahmen: Hauptkamera hochkant, senkrechter Bildwinkel ca. 69°; Ziel 2,5–3 m Abstand, Kamera auf Hüft- bis Bauchnabelhöhe,
+// schräg von vorn (ca. 25–65° zur Blickrichtung). Läuft 5-mal pro Sekunde; die wichtigste Korrektur wird angesagt.
+const A={on:ls('bx.al')!=='0',phase:'off',okSince:0,lastSay:0,lastMsg:'',ori:null,t:0};
+$('aOn').value=A.on?'1':'0';$('aOn').onchange=()=>{A.on=$('aOn').value==='1';ls('bx.al',A.on?'1':'0')};
+const CHECKS=[['person','Person erkannt'],['tilt','Handy senkrecht'],['full','Ganz im Bild'],['dist','Abstand'],['height','Kamerahöhe'],['center','Mittig'],['angle','Winkel schräg'],['light','Licht/Schärfe']];
+$('aList').innerHTML=CHECKS.map(([k,l])=>'<li id="ac_'+k+'">'+l+'</li>').join('');
+window.addEventListener('deviceorientation',e=>{if(e.beta!=null)A.ori={beta:e.beta,gamma:e.gamma,t:performance.now()}});
+function askMotion(){try{if(window.DeviceOrientationEvent&&typeof DeviceOrientationEvent.requestPermission==='function')DeviceOrientationEvent.requestPermission().catch(()=>{})}catch(e){}}
+const TAN_V=Math.tan(34.5*Math.PI/180),TARGET_D=2.7;
+function evalAlign(h){const r={},vw=S.vw,vh=S.vh,q=j=>[h.p[j*3]/vw,h.p[j*3+1]/vh],c=j=>h.p[j*3+2];
+  const seen=[J.nose,J.lSh,J.rSh,J.lHip,J.rHip,J.lAn,J.rAn].filter(j=>c(j)>0.3).length;
+  r.person=seen>=6?{ok:true}:{ok:false,say:'Ich sehe dich nicht vollständig. Stell dich in die Ausgangsposition, ganzer Körper ins Bild.'};
+  if(A.ori&&performance.now()-A.ori.t<2000){const b=A.ori.beta,g=A.ori.gamma;
+    r.tilt=Math.abs(b-90)<=7&&Math.abs(g)<=6?{ok:true}:{ok:false,say:Math.abs(g)>6?'Handy steht schief. Seitlich gerade ausrichten.':b<83?'Handy kippt nach hinten. Oben etwas nach vorn neigen, bis es senkrecht steht.':'Handy kippt nach vorn. Oben etwas nach hinten neigen, bis es senkrecht steht.'}}
+  else r.tilt={ok:true,na:true};
+  if(!r.person.ok)return r;
+  const nose=q(J.nose),an=[(q(J.lAn)[0]+q(J.rAn)[0])/2,Math.max(q(J.lAn)[1],q(J.rAn)[1])],hip=[(q(J.lHip)[0]+q(J.rHip)[0])/2,(q(J.lHip)[1]+q(J.rHip)[1])/2];
+  const headTop=nose[1]-(an[1]-nose[1])*0.07/0.89;// Scheitel ca. 7 % der Körpergröße über der Nase
+  r.full=headTop<0.03?{ok:false,say:'Der Kopf ist abgeschnitten. Kamera etwas weiter weg oder einen Schritt zurück.'}:an[1]>0.95?{ok:false,say:'Die Füße sind abgeschnitten. Kamera etwas weiter weg oder einen Schritt zurück.'}:{ok:true};
+  const span=an[1]-nose[1],frameM=0.89*S.H/Math.max(0.05,span),dist=frameM/(2*TAN_V);
+  r.dist=span>0.62?{ok:false,say:'Zu nah, etwa '+fmt(dist,1)+' Meter. Geh etwa '+fmt(Math.max(0.5,TARGET_D-dist),1)+' Meter zurück.'}:span<0.38?{ok:false,say:'Zu weit weg, etwa '+fmt(dist,1)+' Meter. Komm etwa '+fmt(Math.max(0.5,dist-TARGET_D),1)+' Meter näher.'}:{ok:true};
+  r.dist.info='Abstand ca. '+fmt(dist,1)+' m';
+  const dy=(hip[1]-0.55)*frameM;// Hüfte soll leicht unter der Bildmitte liegen (Kamera ca. 1,0–1,2 m hoch)
+  r.height=Math.abs(dy)<=0.15||r.tilt.na&&Math.abs(dy)<=0.25?{ok:true}:{ok:false,say:dy>0?'Kamera steht zu hoch. Etwa '+Math.round(Math.abs(dy)*100/5)*5+' Zentimeter tiefer, ungefähr auf Hüfthöhe.':'Kamera steht zu tief. Etwa '+Math.round(Math.abs(dy)*100/5)*5+' Zentimeter höher, ungefähr auf Hüfthöhe.'};
+  r.center=hip[0]<0.33?{ok:false,say:'Du stehst zu weit am Bildrand. Kamera etwas nach links drehen.'}:hip[0]>0.67?{ok:false,say:'Du stehst zu weit am Bildrand. Kamera etwas nach rechts drehen.'}:{ok:true};
+  const shM=Math.hypot((q(J.lSh)[0]-q(J.rSh)[0])*vw/vh,q(J.lSh)[1]-q(J.rSh)[1])*frameM,ang=Math.acos(Math.min(1,shM/(0.2*S.H)))*180/Math.PI;
+  const leadSide=S.stance==='orth'?'links':'rechts';
+  r.angle=ang<22?{ok:false,say:'Du stehst zu frontal zur Kamera. Kamera weiter zur Seite stellen, schräg vor dich auf der '+leadSide+'en Seite.'}:ang>70?{ok:false,say:'Du stehst zu seitlich zur Kamera. Kamera mehr vor dich stellen, etwa im halben rechten Winkel.'}:{ok:true};
+  r.angle.info='Winkel ca. '+Math.round(ang)+'°';
+  const conf=[J.lWr,J.rWr,J.lEl,J.rEl,J.lAn,J.rAn].reduce((a,j)=>a+c(j),0)/6;
+  r.light=conf<0.45||(S.fps&&S.fps<80)?{ok:false,say:conf<0.45?'Das Bild ist zu dunkel oder unscharf. Mehr Licht.':'Die Auswertung schafft nur '+S.fps+' Bilder pro Sekunde. Andere Apps schließen.'}:{ok:true};
+  return r}
+function alignTick(){if(A.phase!=='align'&&A.phase!=='calib')return;const h=S.hist[S.hist.length-1];if(!h)return;const now=performance.now();if(now-A.t<200)return;A.t=now;
+  if(A.phase==='calib'){if(!S.calib&&S.lastT>S.calibUntil+0.6){A.phase='align';A.okSince=0;say('Kalibrieren hat nicht geklappt. Ganzer Körper muss sichtbar sein.');return}
+    if(S.calib&&!S.calibSpans.length&&S.lastT>S.calibUntil){A.phase='done';$('aMsg').textContent='Fertig – Ausgangsposition!';say('Kalibriert. Ausgangsposition.');setTimeout(()=>{document.documentElement.classList.remove('amode');roundsStart()},1800)}return}
+  const r=evalAlign(h);let first=null;
+  for(const [k] of CHECKS){const li=$('ac_'+k),x=r[k];li.className=!x||x.na?'':x.ok?'ok':'no';if(x&&!x.ok&&!first)first=x}
+  $('aSub').textContent=[r.dist&&r.dist.info,r.angle&&r.angle.info,A.ori?'Neigung '+Math.round(A.ori.beta)+'°':'Neigung: kein Sensor'].filter(Boolean).join(' · ');
+  if(!first){if(!A.okSince)A.okSince=now;const left=2-(now-A.okSince)/1000;$('aMsg').textContent=left>0?'Passt – stehen bleiben …':'Kamera passt!';$('aMsg').className='msg ok';
+    if(left<=0){A.phase='calib';S.calib=null;S.calibSpans=[];S.calibUntil=S.lastT+2;$('aMsg').textContent='Jetzt 2 Sekunden gerade hinstellen';say('Kamera passt. Jetzt zwei Sekunden gerade hinstellen.')}}
+  else{A.okSince=0;$('aMsg').textContent=first.say.split('. ')[0]+'.';$('aMsg').className='msg bad';
+    if(now-A.lastSay>4500||(first.say!==A.lastMsg&&now-A.lastSay>2000)){A.lastSay=now;A.lastMsg=first.say;say(first.say)}}}
+function startFlow(){if(A.on){A.phase='align';A.okSince=0;A.lastSay=0;A.lastMsg='';document.documentElement.classList.add('amode');$('aMsg').textContent='Kamera-Check: stell dich in die Ausgangsposition';$('aMsg').className='msg bad';say('Kamera-Check. Stell dich in die Ausgangsposition.')}else roundsStart()}
+function alignStop(){A.phase='off';document.documentElement.classList.remove('amode')}
+
+/* ---------- Runden ---------- */
+const KEYS=[['Jab','Jab'],['Cross','Cross'],['Haken Führhand','Haken FH'],['Haken Schlaghand','Haken SH'],['Uppercut Führhand','Upper FH'],['Uppercut Schlaghand','Upper SH'],['Low-Kick','Low-Kick'],['Front-Kick','Front-Kick'],['Roundhouse','Roundh.']];
+const keyOf=s=>s.type.replace(/ \(.*\)/,'');
+const R={len:+(ls('bx.rl')??60),num:+(ls('bx.rn')||3),pause:+(ls('bx.rp')||30),phase:'idle',n:0,tEnd:0,cur:[],rounds:[],timer:null,warned:false,ac:null};
+window.__R=R;
+$('rLen').value=R.len;$('rNum').value=R.num;$('rPause').value=R.pause;
+$('rLen').onchange=()=>{R.len=+$('rLen').value;ls('bx.rl',R.len)};$('rNum').onchange=()=>{R.num=+$('rNum').value;ls('bx.rn',R.num)};$('rPause').onchange=()=>{R.pause=+$('rPause').value;ls('bx.rp',R.pause)};
+$('rCnt').innerHTML=KEYS.map(([k,l])=>'<div data-k="'+k+'"><span>'+l+'</span><b>0</b></div>').join('');
+function actx(){if(!R.ac){try{R.ac=new(window.AudioContext||window.webkitAudioContext)()}catch(e){}}try{R.ac&&R.ac.resume()}catch(e){}return R.ac}
+// Gong aus mehreren abklingenden Teiltönen; Klapper = kurze Klicks
+function bell(times){const c=actx();if(!c)return;for(let k=0;k<times;k++){const t0=c.currentTime+0.05+k*0.45;for(const [f,g,d] of [[523,0.35,2.2],[1046,0.18,1.6],[1567,0.12,1.2],[2637,0.06,0.8]]){const o=c.createOscillator(),gn=c.createGain();o.frequency.value=f;gn.gain.setValueAtTime(0,t0);gn.gain.linearRampToValueAtTime(g,t0+0.005);gn.gain.exponentialRampToValueAtTime(0.0005,t0+d);o.connect(gn).connect(c.destination);o.start(t0);o.stop(t0+d+0.05)}}}
+function clack(){const c=actx();if(!c)return;for(let k=0;k<2;k++){const t0=c.currentTime+0.05+k*0.18,b=c.createBuffer(1,c.sampleRate*0.04,c.sampleRate),d=b.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*Math.exp(-i/(c.sampleRate*0.006));const s=c.createBufferSource(),f=c.createBiquadFilter(),g=c.createGain();f.type='highpass';f.frequency.value=1500;g.gain.value=0.9;s.buffer=b;s.connect(f).connect(g).connect(c.destination);s.start(t0)}}
+function say(t){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.lang='de-DE';speechSynthesis.speak(u)}catch(e){}}
+const mmss=s=>{s=Math.max(0,Math.ceil(s));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')};
+function roundsStart(){if(!R.len){document.documentElement.classList.remove('rmode');return}document.documentElement.classList.add('rmode');R.rounds=[];R.n=0;R.phase='count';R.tEnd=performance.now()+5000;resetCounts();say('In Position. Runde beginnt in fünf Sekunden.');
+  clearInterval(R.timer);R.timer=setInterval(tick,200);tick()}
+function roundsStop(){clearInterval(R.timer);R.timer=null;if(R.phase==='round'&&R.cur.length)endRound(true);R.phase='idle';document.documentElement.classList.remove('rmode')}
+function resetCounts(){R.cur=[];for(const d of $('rCnt').children)d.lastChild.textContent='0';$('rTotal').textContent='0'}
+function tick(){const now=performance.now(),left=(R.tEnd-now)/1000,cl=$('rClock');
+  if(R.phase==='count'){cl.textContent=mmss(left);cl.className='pause';$('rInfo').textContent='Runde '+(R.n+1)+' von '+R.num+' · gleich geht es los';if(left<=0){R.n++;R.phase='round';R.tEnd=now+R.len*1000;R.warned=false;R.t0=now;R.t0s=S.lastT;resetCounts();bell(1)}}
+  else if(R.phase==='round'){cl.textContent=mmss(left);cl.className=left<=10?'warn':'';$('rInfo').textContent='Runde '+R.n+' von '+R.num;if(left<=10&&!R.warned&&R.len>=30){R.warned=true;clack()}if(left<=0)endRound(false)}
+  else if(R.phase==='pause'){cl.textContent=mmss(left);cl.className='pause';$('rInfo').textContent='Pause · nächste: Runde '+(R.n+1);const nx=$('repNext');if(nx)nx.textContent='Runde '+(R.n+1)+' beginnt in '+mmss(left);
+    if(left<=0){$('report').classList.remove('on');R.phase='count';R.tEnd=now+3000}}}
+function endRound(aborted){const rec={n:R.n,list:R.cur.slice(),dur:aborted?(performance.now()-R.t0)/1000:R.len,t0s:R.t0s};R.rounds.push(rec);bell(3);
+  const last=R.n>=R.num||aborted;R.phase=last?'done':'pause';if(!last)R.tEnd=performance.now()+R.pause*1000;
+  showReport(rec,last);const st=analyseRound(rec);say('Runde '+R.n+' vorbei. '+st.total+' Schläge'+(st.total?', bester '+kmh(st.best)+' Kilometer pro Stunde.':'.'));if(last){clearInterval(R.timer);R.timer=null}}
+// Auswertung einer Runde
+function analyseRound(r){const L=r.list,per={};for(const s of L){const k=keyOf(s);(per[k]=per[k]||[]).push(s)}
+  const total=L.length,best=total?Math.max(...L.map(s=>s.v)):0;
+  // Kombinationen: Folgen mit < 0,7 s Abstand zwischen Ende und nächstem Beginn
+  const combos={};let seq=[];const flush=()=>{if(seq.length>=2){const k=seq.map(keyOf).join(' – ');combos[k]=(combos[k]||0)+1}seq=[]};
+  for(const s of L){if(seq.length&&(s.t-s.dur)-seq[seq.length-1].t>0.7)flush();seq.push(s)}flush();
+  const inCombo=Object.entries(combos).reduce((a,[k,n])=>a+n*k.split(' – ').length,0);
+  const half=L.length?(L[0].t+L[L.length-1].t)/2:0,h1=L.filter(s=>s.t<half),h2=L.filter(s=>s.t>=half),avg=a=>a.length?a.reduce((x,s)=>x+s.v,0)/a.length:0;
+  const fatigue=h1.length>=3&&h2.length>=3?(avg(h2)/avg(h1)-1)*100:null;
+  let gap=0;for(let i=1;i<L.length;i++)gap=Math.max(gap,(L[i].t-L[i].dur)-L[i-1].t);if(r.t0s!=null){gap=L.length?Math.max(gap,L[0].t-L[0].dur-r.t0s,r.t0s+r.dur-L[L.length-1].t):r.dur}
+  const hands=L.filter(s=>s.hand),lead=hands.filter(s=>/Jab|Führhand/.test(s.type)).length;
+  return{per,total,best,avg:avg(L),combos:Object.entries(combos).sort((a,b)=>b[1]-a[1]),comboShare:total?inCombo/total:0,fatigue,gap,hands:hands.length,lead,rate:total/Math.max(1/60,r.dur/60)}}
+function tips(a,prev){const t=[],n=k=>(a.per[k]||[]).length;
+  if(!a.total)return['Keine Schläge erkannt – steht die Kamera richtig und ist der ganze Körper im Bild?'];
+  if(a.hands>=6&&n('Jab')/a.hands<0.25)t.push('Wenig Jab ('+Math.round(n('Jab')/a.hands*100)+' % der Handschläge). Der Jab eröffnet – mehr einbauen.');
+  if(a.hands>=6&&(a.lead/a.hands<0.3||a.lead/a.hands>0.75))t.push('Ungleich verteilt: '+Math.round(a.lead/a.hands*100)+' % Führhand. Beide Hände arbeiten lassen.');
+  if(a.comboShare<0.4&&a.total>=6)t.push('Nur '+Math.round(a.comboShare*100)+' % der Schläge in Kombinationen. Mehr Serien aus 2–4 Schlägen.');
+  if(a.fatigue!=null&&a.fatigue<-8)t.push('Tempo fällt in der zweiten Hälfte um '+Math.round(-a.fatigue)+' %. Gleichmäßiger einteilen oder Ausdauer trainieren.');
+  if(a.gap>8)t.push('Längste Pause ohne Schlag: '+Math.round(a.gap)+' s. Durchgehend aktiv bleiben, auch mit leichten Jabs.');
+  if(prev&&prev.total&&a.total<prev.total*0.85)t.push('Weniger Schläge als in der Runde davor ('+a.total+' statt '+prev.total+').');
+  if(!t.length)t.push('Gute Runde: ausgewogen, mit Kombinationen und ohne Tempoverlust.');return t}
+function showReport(r,last){const a=analyseRound(r),prev=R.rounds.length>1?analyseRound(R.rounds[R.rounds.length-2]):null;
+  const rows=KEYS.filter(([k])=>a.per[k]).map(([k])=>{const L=a.per[k];return'<tr><td>'+k+'</td><td>'+L.length+'</td><td>'+kmh(L.reduce((x,s)=>x+s.v,0)/L.length)+'</td><td>'+kmh(Math.max(...L.map(s=>s.v)))+'</td></tr>'}).join('');
+  let h='<h2>Runde '+r.n+(last?' · Ende':'')+'</h2><div class="kpi"><div><b>'+a.total+'</b>Schläge/Tritte</div><div><b>'+Math.round(a.rate)+'</b>pro Minute</div><div><b>'+(a.total?kmh(a.best):'–')+'</b>Bestwert km/h</div>'+
+    '<div><b>'+(a.total?kmh(a.avg):'–')+'</b>Schnitt km/h</div><div><b>'+Math.round(a.comboShare*100)+' %</b>in Kombinationen</div><div><b>'+(a.fatigue==null?'–':(a.fatigue>0?'+':'')+Math.round(a.fatigue)+' %')+'</b>Tempo 2. Hälfte</div></div>'+
+    (rows?'<table><tr><th>Technik</th><th>Anzahl</th><th>Ø km/h</th><th>max km/h</th></tr>'+rows+'</table>':'')+
+    (a.combos.length?'<p style="margin:10px 0 0;color:var(--muted);font-size:14px"><b style="color:var(--text)">Häufigste Kombinationen:</b> '+a.combos.slice(0,3).map(([k,n])=>k+' ('+n+'×)').join(' · ')+'</p>':'')+
+    '<p style="margin:10px 0 0;font-size:14px"><b>Hinweise</b></p><ul>'+tips(a,prev).map(x=>'<li>'+x+'</li>').join('')+'</ul>';
+  if(last&&R.rounds.length>1){h+='<p style="margin:12px 0 0;font-size:14px"><b>Alle Runden</b></p><table><tr><th>Runde</th><th>Schläge</th><th>pro min</th><th>Ø km/h</th><th>max</th></tr>'+R.rounds.map(x=>{const b=analyseRound(x);return'<tr><td>'+x.n+'</td><td>'+b.total+'</td><td>'+Math.round(b.rate)+'</td><td>'+(b.total?kmh(b.avg):'–')+'</td><td>'+(b.total?kmh(b.best):'–')+'</td></tr>'}).join('')+'</table>'}
+  if(!last)h+='<div class="next" id="repNext"></div>';
+  $('repBody').innerHTML=h;$('repClose').textContent=last?'Schließen':'Ausblenden (Pause läuft weiter)';$('report').classList.add('on')}
+$('repClose').onclick=()=>{$('report').classList.remove('on')};
+function countStrike(s){if(R.phase!=='round')return;R.cur.push(s);$('rTotal').textContent=R.cur.length;const k=keyOf(s);for(const d of $('rCnt').children)if(d.dataset.k===k){d.lastChild.textContent=R.cur.filter(x=>keyOf(x)===k).length;d.classList.add('flash');setTimeout(()=>d.classList.remove('flash'),350)}}
+
+/* ---------- Anzeige ---------- */
+const kmh=v=>Math.round(v*3.6);const fmt=(v,d)=>v.toFixed(d).replace('.',',');
+function show(s){countStrike(s);$('hType').textContent=s.type;$('hSpd').innerHTML=kmh(s.v)+'<small>km/h · '+fmt(s.v,1)+' m/s</small>';
+  $('hSub').textContent=(s.hand?'Handgelenk':'Knöchel')+' · '+Math.round(s.dur*1000)+' ms'+(s.f>1.05?' · Tiefe hochgerechnet ×'+fmt(s.f,2):'')+' · Winkel '+Math.round(s.angle)+'°';
+  const short={straight:'',hook:'',upper:'',low:'',front:'',round:''};
+  const chips=S.strikes.slice(-8).reverse().map(x=>'<span>'+x.type.replace(' (vorderes Bein)',' v').replace(' (hinteres Bein)',' h').replace('Führhand','FH').replace('Schlaghand','SH')+' '+kmh(x.v)+'</span>').join('');$('chips').innerHTML=chips;
+  $('stats').style.display='';$('stN').textContent=S.strikes.length;$('stBest').textContent=kmh(Math.max(...S.strikes.map(x=>x.v)))+' km/h';
+  const mins=Math.max(1/60,(S.lastT-S.tStart)/60);$('stRate').textContent=Math.round(S.strikes.length/mins);
+  if(S.voice){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(s.type.replace(/ \(.*\)/,'')+', '+kmh(s.v));u.lang='de-DE';u.rate=1.25;speechSynthesis.speak(u)}catch(e){}}
+  if(NATIVE&&S.src==='native')try{NATIVE.post({cmd:'haptic',style:'light'})}catch(e){}}
+const cv=$('ov');
+function draw(){requestAnimationFrame(draw);const dpr=Math.min(2,devicePixelRatio||1),W=innerWidth,H=innerHeight;if(cv.width!==W*dpr||cv.height!==H*dpr){cv.width=W*dpr;cv.height=H*dpr}
+  const c=cv.getContext('2d');c.setTransform(dpr,0,0,dpr,0,0);c.clearRect(0,0,W,H);if(!S.on&&!S.hist.length)return;
+  // Videobild füllt den Bildschirm (wie die Kameravorschau der App)
+  const s=Math.max(W/S.vw,H/S.vh),ox=(W-S.vw*s)/2,oy=(H-S.vh*s)/2,X=x=>ox+x*s,Y=y=>oy+y*s;
+  if(S.src==='demo'){c.fillStyle='#0B1220';c.fillRect(0,0,W,H);c.strokeStyle='rgba(120,150,190,.15)';c.beginPath();c.moveTo(0,Y(S.vh*0.86));c.lineTo(W,Y(S.vh*0.86));c.stroke()}
+  const h=S.hist[S.hist.length-1];
+  if(A.phase==='align'){c.setLineDash([10,8]);c.lineWidth=2;c.strokeStyle='rgba(53,224,200,.7)';c.strokeRect(X(S.vw*0.33),Y(S.vh*0.04),X(S.vw*0.67)-X(S.vw*0.33),Y(S.vh*0.95)-Y(S.vh*0.04));
+    c.strokeStyle='rgba(255,226,166,.6)';c.beginPath();c.moveTo(X(0),Y(S.vh*0.55));c.lineTo(X(S.vw),Y(S.vh*0.55));c.stroke();c.setLineDash([]);c.fillStyle='rgba(255,226,166,.8)';c.font='12px system-ui';c.fillText('Hüfte etwa hier',X(S.vw*0.33)+4,Y(S.vh*0.55)-5)}
+  if(h){c.lineWidth=4;c.lineCap='round';for(const [a,b] of BONES){if(C(h,a)<0.2||C(h,b)<0.2)continue;c.strokeStyle=a===1&&b===8?'rgba(255,255,255,.6)':'rgba(53,224,200,.85)';c.beginPath();c.moveTo(X(h.p[a*3]),Y(h.p[a*3+1]));c.lineTo(X(h.p[b*3]),Y(h.p[b*3+1]));c.stroke()}
+    for(const j of [J.lWr,J.rWr,J.lAn,J.rAn])if(C(h,j)>0.2){c.fillStyle='#FFB020';c.beginPath();c.arc(X(h.p[j*3]),Y(h.p[j*3+1]),6,0,7);c.fill()}}
+  // letzter Schlag: Bahn nach Tempo eingefärbt, verblasst nach 2 s
+  const last=S.strikes[S.strikes.length-1];
+  if(last&&S.lastT-last.t<2){const al=1-(S.lastT-last.t)/2;const vmax=Math.max(...last.pts.map(q=>q[2]))||1;c.lineWidth=7;
+    for(let i=1;i<last.pts.length;i++){const q0=last.pts[i-1],q1=last.pts[i],r=q1[2]/vmax;c.strokeStyle='rgba('+Math.round(255)+','+Math.round(220-170*r)+','+Math.round(60-40*r)+','+al+')';c.beginPath();c.moveTo(X(q0[0]),Y(q0[1]));c.lineTo(X(q1[0]),Y(q1[1]));c.stroke()}
+    const pk=last.peak;c.globalAlpha=al;c.font='700 22px system-ui';c.fillStyle='#000';c.fillText(kmh(last.v)+' km/h',X(pk[0])+11,Y(pk[1])-9);c.fillStyle='#FFE2A6';c.fillText(kmh(last.v)+' km/h',X(pk[0])+10,Y(pk[1])-10);c.globalAlpha=1}
+  const m=mpp();$('live').textContent=S.on?((S.src==='demo'?'Vorführung · ':'')+S.fps+' Bilder/s ausgewertet'+(S.cam?' (Kamera '+S.cam+')':'')+' · Hand jetzt '+fmt(S.liveHand||0,1)+' m/s · '+(S.calib?'kalibriert':m?'Maßstab automatisch':'Maßstab fehlt – ganzer Körper ins Bild')):''}
+requestAnimationFrame(draw);
+
+/* ---------- Quelle: App ---------- */
+const b64f=s=>{const b=atob(s),u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return new Float32Array(u.buffer)};
+function startNative(){S.src='native';S.on=true;S.hist=[];S.state={};S.tStart=0;document.documentElement.classList.add('cam');
+  NATIVE.on.poseStarted=d=>{S.cam=d.fps;if(d.w){S.vw=d.w;S.vh=d.h}setState('Kamera läuft mit bis zu '+d.fps+' Bildern/s. '+(A.on?'Kamera-Check läuft – Ansagen folgen.':S.calib?'':'Gerade hinstellen, dann Kalibrieren.'),'good')};
+  NATIVE.on.poseError=d=>{stop();setState(d.message,'bad')};
+  NATIVE.on.pose=d=>{if(!S.on)return;if(d.w){S.vw=d.w;S.vh=d.h}S.fps=d.fps;S.cam=d.cam;const a=b64f(d.d),n=d.stride;for(let i=0;i+n<=a.length;i+=n){if(!S.tStart)S.tStart=a[i]||1e-6;ingest(a[i],a.subarray(i+1,i+n))}};
+  NATIVE.post({cmd:'poseStart',fps:240});startFlow();$('go').textContent='Stopp';$('go').classList.add('stop');setState('Kamera startet …')}
+function stop(){if(S.src==='native'&&NATIVE){try{NATIVE.post({cmd:'poseStop'})}catch(e){}}if(S.demoTimer){clearInterval(S.demoTimer);S.demoTimer=null}
+  alignStop();roundsStop();S.on=false;document.documentElement.classList.remove('cam','run');$('go').textContent=CAN?'Start':'Vorführung starten';$('go').classList.remove('stop');setState('Angehalten')}
+$('go').onclick=()=>{actx();askMotion();if(S.on){stop();return}if(CAN)startNative();else startDemo()};
+$('demo').onclick=()=>{actx();if(S.on)stop();startDemo()};
+$('reset').onclick=()=>{S.strikes=[];S.tStart=S.lastT;$('chips').innerHTML='';$('stats').style.display='none';$('hType').textContent='–';$('hSpd').innerHTML='–<small>km/h</small>';$('hSub').textContent='Noch kein Schlag'};
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&S.on)stop()});
+
+/* ---------- Vorführung: simulierter Boxer (120 Bilder/s, mit Messrauschen) ---------- */
+function startDemo(){S.src='demo';S.on=true;S.hist=[];S.state={};S.spans=[];S.calib=null;S.vw=720;S.vh=1280;S.fps=120;S.cam=0;document.documentElement.classList.add('run');
+  startFlow();$('go').textContent='Stopp';$('go').classList.add('stop');setState('Vorführung: Jab, Cross, Haken, Uppercut, Low-Kick, Front-Kick, Roundhouse','good');
+  const H=1.75,PX=560/(0.89*H),cx=300,cy=760;// Bildpunkte pro Meter, Hüfte im Bild
+  const base={nose:[0.05,-0.66],neck:[0,-0.5],lSh:[0.08,-0.47],rSh:[-0.08,-0.47],lEl:[0.2,-0.3],rEl:[0.06,-0.28],lWr:[0.22,-0.52],rWr:[0.12,-0.56],root:[0,0],lHip:[0.05,0],rHip:[-0.05,0],lKn:[0.14,0.45],rKn:[-0.12,0.45],lAn:[0.24,0.89],rAn:[-0.2,0.89]};
+  const N=Object.keys(base);const ease=x=>x<=0?0:x>=1?1:x*x*(3-2*x);const lerp=(a,b,t)=>[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t];
+  // je Aktion: Dauer hin (s), Rückweg (s), Funktion setzt Gelenke für Fortschritt e (0…1)
+  const arc=(a0,a1,e,bul)=>{const q=lerp(a0,a1,e),k=Math.sin(Math.PI*e);return[q[0]+bul[0]*k,q[1]+bul[1]*k]};
+  const acts=[
+    {out:0.13,back:0.2,f:(q,e)=>{q.lWr=lerp(base.lWr,[0.68,-0.5],e);q.lEl=lerp(base.lEl,[0.38,-0.49],e)}},
+    {out:0.15,back:0.22,f:(q,e)=>{q.rSh=lerp(base.rSh,[0.06,-0.47],e);q.rWr=lerp(base.rWr,[0.66,-0.5],e);q.rEl=lerp(base.rEl,[0.36,-0.49],e)}},
+    {out:0.16,back:0.22,f:(q,e)=>{q.lEl=lerp(base.lEl,[0.3,-0.48],e);q.lWr=arc(base.lWr,[0.38,-0.6],e,[0.16,0.1])}},
+    {out:0.16,back:0.22,f:(q,e)=>{q.rEl=lerp(base.rEl,[0.24,-0.42],e);q.rWr=arc(base.rWr,[0.3,-0.75],e,[0.02,0.2])}},
+    {out:0.2,back:0.25,f:(q,e)=>{q.rKn=lerp(base.rKn,[0.15,0.35],e);q.rAn=arc(base.rAn,[0.45,0.55],e,[0,-0.08])}},
+    {out:0.22,back:0.25,f:(q,e)=>{const k=Math.min(1,e*1.8),x=Math.max(0,(e-0.45)/0.55);q.lKn=lerp(base.lKn,[0.4,0.0],k);q.lAn=lerp(lerp(base.lAn,[0.38,0.42],k),[0.88,-0.02],x)}},
+    {out:0.24,back:0.28,f:(q,e)=>{q.lSh=lerp(base.lSh,[0.0,-0.47],e);q.rSh=lerp(base.rSh,[0.01,-0.47],e);q.lHip=lerp(base.lHip,[0.0,0],e);q.rHip=lerp(base.rHip,[0.01,0],e);q.rKn=lerp(base.rKn,[0.3,0.05],e);q.rAn=arc(base.rAn,[0.75,-0.1],e,[-0.35,-0.25])}}];
+  let t=0,ai=0,phase=-0.5;const dt=1/120;const R=()=>(Math.random()-0.5)*0.012;
+  S.demoTimer=setInterval(()=>{for(let s=0;s<4;s++){t+=dt;phase+=dt;const A=acts[ai%acts.length];const q={};for(const k of N)q[k]=base[k].slice();
+      if(phase>0){const e=phase<A.out?ease(phase/A.out):ease(1-(phase-A.out)/A.back);A.f(q,e);if(phase>A.out+A.back+0.55){phase=-0.25;ai++}}
+      const raw=new Float32Array(NJ*3);N.forEach((k,j)=>{raw[j*3]=(cx+(q[k][0]+R())*PX)/S.vw;raw[j*3+1]=(cy+(q[k][1]+R())*PX)/S.vh;raw[j*3+2]=0.9});if(!S.tStart)S.tStart=t;ingest(t,raw)}},33)}
+})();
+</script>
+</body>
+</html>
