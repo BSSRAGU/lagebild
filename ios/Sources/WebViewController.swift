@@ -35,7 +35,7 @@ final class WebViewController: UIViewController, WKScriptMessageHandler, WKNavig
         ucc.add(WeakMessageHandler(self), name: "lagebild")
         let lidar = DepthSensor.isSupported ? "true" : "false"
         let bridge = """
-        window.LagebildNative={caps:{version:'\(Self.appVersion) (Build \(Self.appBuild))',build:\(Self.appBuild),rawAudio:true,http:true,persons:\(lidar),lidar:\(lidar),lidarMap:\(lidar),haptics:true,pose:true,poseFront:true,poseZoom:true},on:{},
+        window.LagebildNative={caps:{version:'\(Self.appVersion) (Build \(Self.appBuild))',build:\(Self.appBuild),rawAudio:true,http:true,persons:\(lidar),lidar:\(lidar),lidarMap:\(lidar),haptics:true,pose:true,poseFront:true,poseZoom:true,nav:true},on:{},
         post:function(m){window.webkit.messageHandlers.lagebild.postMessage(m)},
         dispatch:function(t,d){var f=this.on[t];if(f){try{f(d)}catch(e){console.error(e)}}}};
         """

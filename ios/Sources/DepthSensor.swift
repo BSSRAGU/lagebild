@@ -34,6 +34,8 @@ final class DepthSensor: NSObject, ARSessionDelegate {
     private var persons: [[Float]] = []
     // Objekterkennung: Bildklassifikation je Drittel (links, Mitte, rechts) etwa 1-mal pro Sekunde
     private var lastObjectTime: TimeInterval = 0
+    // Bodenhöhe aus den Messpunkten selbst (falls ARKit noch keine Bodenebene gefunden hat)
+    private var floorEstimate: Float?
     private var objects: [[String: Any]] = []
     private static let ignoredLabels: Set<String> = ["structure", "indoor", "interior_room", "room", "material", "wood_processed", "wood_natural", "textile", "wall", "floor", "ceiling", "housewares", "consumer_electronics", "machine", "conveyance", "tool", "document", "liquid", "art", "light", "sky", "outdoor"]
     private lazy var humanRequest: VNDetectHumanRectanglesRequest = {
@@ -66,7 +68,7 @@ final class DepthSensor: NSObject, ARSessionDelegate {
         config.planeDetection = [.horizontal]
         lastTimestamp = 0
         self.mapping = mapping
-        queue.async { self.voxels.removeAll(keepingCapacity: true); self.hits.removeAll(keepingCapacity: true); self.lastMapTransform = nil }
+        queue.async { self.voxels.removeAll(keepingCapacity: true); self.hits.removeAll(keepingCapacity: true); self.lastMapTransform = nil; self.floorEstimate = nil }
         s.run(config, options: [.resetTracking, .removeExistingAnchors])
         session = s
     }
@@ -127,7 +129,15 @@ final class DepthSensor: NSObject, ARSessionDelegate {
         let cx = K[2][0] * scaleX, cy = K[2][1] * scaleY
         let T = frame.camera.transform
         let camPos = SIMD3<Float>(T.columns.3.x, T.columns.3.y, T.columns.3.z)
-        let floorY = floorHeight(frame, cameraY: camPos.y)
+        let planeFloor = floorHeight(frame, cameraY: camPos.y)
+        // Laufrichtung: Blickrichtung der Kamera auf den Boden projiziert; zeigt das Handy steil nach unten,
+        // gilt die Oberkante des Handys als „vorn“. Daraus je Messpunkt: Abstand voraus und seitlich (rechts positiv).
+        let fwd3 = SIMD3<Float>(-T.columns.2.x, -T.columns.2.y, -T.columns.2.z)
+        var hx = fwd3.x, hz = fwd3.z
+        if (hx * hx + hz * hz).squareRoot() < 0.35 { hx = T.columns.1.x; hz = T.columns.1.z }
+        let hl = max(1e-4, (hx * hx + hz * hz).squareRoot())
+        hx /= hl; hz /= hl
+        let pitchDown = asin(max(-1, min(1, -fwd3.y))) * 180 / Float.pi
 
         // 4×4-Blöcke zusammenfassen (nächster gültiger Wert) und um 90° im Uhrzeigersinn drehen
         let step = 4
@@ -138,6 +148,9 @@ final class DepthSensor: NSObject, ARSessionDelegate {
         var outDepth = [Float](repeating: 0, count: ow * oh)
         var outHeight = [Float](repeating: -999, count: ow * oh)
         var outHoriz = [Float](repeating: 0, count: ow * oh)
+        var outY = [Float](repeating: 0, count: ow * oh)
+        var outAhead = [Float](repeating: 0, count: ow * oh)
+        var outRight = [Float](repeating: 0, count: ow * oh)
         for oy in 0..<oh {
             for ox in 0..<ow {
                 let sx = oy
@@ -161,10 +174,47 @@ final class DepthSensor: NSObject, ARSessionDelegate {
                     let xc = (Float(bpx) - cx) * best / fx
                     let yc = -(Float(bpy) - cy) * best / fy
                     let wp = T * SIMD4<Float>(xc, yc, -best, 1)
-                    outHoriz[i] = ((wp.x - camPos.x) * (wp.x - camPos.x) + (wp.z - camPos.z) * (wp.z - camPos.z)).squareRoot()
-                    if let fy0 = floorY { outHeight[i] = wp.y - fy0 }
+                    let ddx = wp.x - camPos.x, ddz = wp.z - camPos.z
+                    outHoriz[i] = (ddx * ddx + ddz * ddz).squareRoot()
+                    outY[i] = wp.y
+                    outAhead[i] = ddx * hx + ddz * hz
+                    outRight[i] = ddx * (-hz) + ddz * hx
                 }
             }
+        }
+
+        // Bodenhöhe: bevorzugt die von ARKit erkannte Bodenebene; sonst die tiefste dicht belegte Höhenschicht
+        // der Messpunkte (2-cm-Schichten, mindestens 60 Punkte, mindestens 50 cm unter dem Handy), zeitlich geglättet.
+        var floorY = planeFloor
+        if floorY == nil {
+            var hist = [Int](repeating: 0, count: 150)
+            let top = camPos.y - 0.8
+            for i in 0..<(ow * oh) where outDepth[i] > 0 {
+                let b = Int((top - outY[i]) / 0.02)
+                if b >= 0 && b < 150 { hist[b] += 1 }
+            }
+            var found: Int?
+            var b = 149
+            while b >= 1 {
+                if hist[b] + hist[b - 1] >= 60 { found = b; break }
+                b -= 1
+            }
+            if let fb = found {
+                var sum: Float = 0
+                var n: Float = 0
+                let lo = top - Float(fb + 1) * 0.02, hi = top - Float(fb - 1) * 0.02
+                for i in 0..<(ow * oh) where outDepth[i] > 0 && outY[i] >= lo && outY[i] <= hi { sum += outY[i]; n += 1 }
+                if n > 0 {
+                    let est = sum / n
+                    if let old = floorEstimate, abs(old - est) < 0.15 { floorEstimate = old + 0.2 * (est - old) } else { floorEstimate = est }
+                }
+            }
+            floorY = floorEstimate
+        } else {
+            floorEstimate = floorY
+        }
+        if let fy0 = floorY {
+            for i in 0..<(ow * oh) where outDepth[i] > 0 { outHeight[i] = outY[i] - fy0 }
         }
 
         // Personen etwa 3-mal pro Sekunde erkennen; je Person: Mitte, Größe (normiert, hochkant),
@@ -238,7 +288,11 @@ final class DepthSensor: NSObject, ARSessionDelegate {
         }
         var payload: [String: Any] = [
             "w": ow, "h": oh, "t": frame.timestamp, "tracking": tracking,
-            "data": outDepth.base64(), "hd": outHoriz.base64(), "floor": floorY != nil
+            "data": outDepth.base64(), "hd": outHoriz.base64(), "floor": floorY != nil,
+            "ah": outAhead.base64(), "rt": outRight.base64(), "head": [hx, hz], "pitch": pitchDown,
+            "floorSrc": planeFloor != nil ? "ebene" : "punkte",
+            // Sichtfeld der Tiefenkarte im Hochformat (Grad): Breite, Höhe
+            "fov": [2 * atan(Float(h) / (2 * fy)) * 180 / Float.pi, 2 * atan(Float(w) / (2 * fx)) * 180 / Float.pi]
         ]
         if let fy0 = floorY {
             payload["hgt"] = outHeight.base64()
