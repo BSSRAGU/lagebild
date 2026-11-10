@@ -1,4 +1,6 @@
 import ARKit
+import CoreImage
+import ImageIO
 import simd
 import Vision
 
@@ -36,6 +38,10 @@ final class DepthSensor: NSObject, ARSessionDelegate {
     private var lastObjectTime: TimeInterval = 0
     // Bodenhöhe aus den Messpunkten selbst (falls ARKit noch keine Bodenebene gefunden hat)
     private var floorEstimate: Float?
+    // Aufzeichnung für die Analyse: einmal pro Sekunde ein kleines Kamerabild (240 px breit, JPEG) mitschicken
+    var snapshots = false
+    private var lastSnapshotTime: TimeInterval = 0
+    private let ciContext = CIContext()
     private var objects: [[String: Any]] = []
     private static let ignoredLabels: Set<String> = ["structure", "indoor", "interior_room", "room", "material", "wood_processed", "wood_natural", "textile", "wall", "floor", "ceiling", "housewares", "consumer_electronics", "machine", "conveyance", "tool", "document", "liquid", "art", "light", "sky", "outdoor"]
     private lazy var humanRequest: VNDetectHumanRectanglesRequest = {
@@ -301,6 +307,17 @@ final class DepthSensor: NSObject, ARSessionDelegate {
         }
         payload["persons"] = persons
         payload["objects"] = objects
+        if snapshots, frame.timestamp - lastSnapshotTime >= 1.0 {
+            lastSnapshotTime = frame.timestamp
+            let ci = CIImage(cvPixelBuffer: frame.capturedImage).oriented(.right)
+            let k = 240 / max(1, ci.extent.width)
+            let small = ci.transformed(by: CGAffineTransform(scaleX: k, y: k))
+            if let cs = CGColorSpace(name: CGColorSpace.sRGB),
+               let jpg = ciContext.jpegRepresentation(of: small, colorSpace: cs,
+                    options: [CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String): 0.5]) {
+                payload["jpg"] = jpg.base64EncodedString()
+            }
+        }
         payload["pose"] = [camPos.x, camPos.y, camPos.z, -T.columns.2.x, -T.columns.2.z]
 
         if mapping, case .normal = frame.camera.trackingState {

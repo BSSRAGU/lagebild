@@ -35,7 +35,7 @@ final class WebViewController: UIViewController, WKScriptMessageHandler, WKNavig
         ucc.add(WeakMessageHandler(self), name: "lagebild")
         let lidar = DepthSensor.isSupported ? "true" : "false"
         let bridge = """
-        window.LagebildNative={caps:{version:'\(Self.appVersion) (Build \(Self.appBuild))',build:\(Self.appBuild),rawAudio:true,http:true,persons:\(lidar),lidar:\(lidar),lidarMap:\(lidar),haptics:true,pose:true,poseFront:true,poseZoom:true,nav:true},on:{},
+        window.LagebildNative={caps:{version:'\(Self.appVersion) (Build \(Self.appBuild))',build:\(Self.appBuild),rawAudio:true,http:true,persons:\(lidar),lidar:\(lidar),lidarMap:\(lidar),haptics:true,pose:true,poseFront:true,poseZoom:true,nav:true,rec:true},on:{},
         post:function(m){window.webkit.messageHandlers.lagebild.postMessage(m)},
         dispatch:function(t,d){var f=this.on[t];if(f){try{f(d)}catch(e){console.error(e)}}}};
         """
@@ -231,6 +231,36 @@ final class WebViewController: UIViewController, WKScriptMessageHandler, WKNavig
                 if let e = error { out["error"] = e.localizedDescription }
                 self?.send("httpResult", out)
             }.resume()
+        case "depthSnap":
+            depth.snapshots = (body["on"] as? Bool) ?? false
+        case "screenshot":
+            // kleines Bildschirmfoto der Seite (für die Aufzeichnung zur Analyse)
+            let cfg = WKSnapshotConfiguration()
+            cfg.snapshotWidth = 300
+            webView.takeSnapshot(with: cfg) { [weak self] image, _ in
+                guard let data = image?.jpegData(compressionQuality: 0.5) else { return }
+                self?.send("screenshot", ["jpg": data.base64EncodedString()])
+            }
+        case "shareFile":
+            // Datei aus der Webseite über das iOS-Teilen-Menü weitergeben (Dateien, AirDrop, Mail …)
+            guard let name = body["name"] as? String, let b64 = body["b64"] as? String,
+                  let data = Data(base64Encoded: b64) else {
+                send("shareDone", ["ok": false, "error": "Datei unlesbar"])
+                return
+            }
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent(name.replacingOccurrences(of: "/", with: "_"))
+            do { try data.write(to: url) } catch {
+                send("shareDone", ["ok": false, "error": error.localizedDescription])
+                return
+            }
+            let vc = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+            vc.completionWithItemsHandler = { [weak self] _, done, _, _ in
+                self?.send("shareDone", ["ok": done])
+            }
+            vc.popoverPresentationController?.sourceView = view
+            vc.popoverPresentationController?.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 1, height: 1)
+            present(vc, animated: true)
         case "keepAwake":
             // Bildschirm nicht sperren, solange eine Messung läuft (sonst bricht z. B. das Mithören im Überflug ab)
             UIApplication.shared.isIdleTimerDisabled = (body["on"] as? Bool) ?? false
